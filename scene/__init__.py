@@ -97,6 +97,10 @@ class Scene:
                 center_rays = torch.nn.functional.normalize(center_rays, dim=-1)
                 diss = torch.norm(camera_centers[:, None] - camera_centers[None], dim=-1).detach().cpu().numpy()
                 tmp = torch.sum(center_rays[:, None] * center_rays[None], dim=-1)
+
+                # [Modifikasi Riset] Mencegah nilai NaN pada arccos yang memicu Segmentation fault
+                tmp = torch.clamp(tmp, min=-1.0, max=1.0)
+
                 angles_torch = torch.arccos(tmp) * 180 / 3.14159
                 angles_np = angles_torch.detach().cpu().numpy()
                 with open(os.path.join(self.model_path, "multi_view.json"), "w") as file:

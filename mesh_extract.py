@@ -49,29 +49,48 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
 
     depth_list = []
     color_list = []
-    for viewpoint_cam in viewpoint_cam_list:
-        # Rendering offscreen from that camera
+    
+    print("\n[PELACAK] Mulai mengekstrak render dari kamera...")
+    for id, viewpoint_cam in enumerate(viewpoint_cam_list):
+        print(f"[PELACAK] Memanggil modul CUDA render untuk kamera ke-{id}...")
+        
+        # Titik Kritis 1: Memanggil kernel CUDA
         render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size)
+        
+        print(f"[PELACAK] Render kamera ke-{id} sukses. Memproses tensor...")
+        
+        # Titik Kritis 2: Memproses data di CPU/RAM
         rendered_img = torch.clamp(render_pkg["render"], min=0, max=1.0).cpu().numpy().transpose(1, 2, 0)
         color_list.append(np.ascontiguousarray(rendered_img))
         depth = render_pkg[depth_name].clone()
         if viewpoint_cam.gt_mask is not None:
             depth[viewpoint_cam.gt_mask < 0.5] = 0
         depth_list.append(depth[0].cpu().numpy())
+        
+        print(f"[PELACAK] Kamera ke-{id} selesai diproses seluruhnya.\n")
 
+    print("\n[PELACAK] Fase 1 Selesai. Membebaskan cache CUDA...")
     torch.cuda.empty_cache()
-    voxel_size = 0.002
+    
+    # [RESOLUSI AMAN] Mengunci detail di 6 milimeter
+    voxel_size = 0.009
     o3d_device = o3d.core.Device("CPU:0")
+    
+    print(f"[PELACAK] Fase 2: Inisialisasi VoxelBlockGrid dengan resolusi {voxel_size}...")
     vbg = o3d.t.geometry.VoxelBlockGrid(
         attr_names=("tsdf", "weight", "color"),
         attr_dtypes=(o3c.float32, o3c.float32, o3c.float32),
         attr_channels=((1), (1), (3)),
         voxel_size=voxel_size,
         block_resolution=16,
-        block_count=50000,
+        block_count=20000,
         device=o3d_device,
     )
-    for color, depth, viewpoint_cam in zip(color_list, depth_list, viewpoint_cam_list):
+    print("[PELACAK] VoxelBlockGrid berhasil dibuat!")
+
+    print("\n[PELACAK] Fase 3: Mulai proses fusi TSDF (Integrasi Open3D)...")
+    for id, (color, depth, viewpoint_cam) in enumerate(zip(color_list, depth_list, viewpoint_cam_list)):
+        print(f"[PELACAK] Mengintegrasikan depth map dari kamera ke-{id}...")
         depth = o3d.t.geometry.Image(depth)
         depth = depth.to(o3d_device)
         color = o3d.t.geometry.Image(color)
@@ -79,14 +98,29 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
         intrinsic = np.array([[viewpoint_cam.Fx, 0, viewpoint_cam.Cx], [0, viewpoint_cam.Fy, viewpoint_cam.Cy], [0, 0, 1]], dtype=np.float64)
         intrinsic = o3d.core.Tensor(intrinsic)
         extrinsic = o3d.core.Tensor((viewpoint_cam.world_view_transform.T).cpu().numpy().astype(np.float64))
+        
         frustum_block_coords = vbg.compute_unique_block_coordinates(depth, intrinsic, extrinsic, 1.0, 8.0)
         vbg.integrate(frustum_block_coords, depth, color, intrinsic, extrinsic, 1.0, 8.0)
 
-    mesh = vbg.extract_triangle_mesh()
-    mesh.compute_vertex_normals()
-    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon.ply"), mesh.to_legacy())
-    mesh = post_process_mesh(mesh.to_legacy(), num_cluster)
-    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon_post.ply"), mesh)
+    # --- DI SINI LETAK PERUBAHAN EDIT KODE BARU KITA ---
+    print("\n[PELACAK] Fase 3 Selesai! Mulai mengekstrak Solid Mesh...")
+    
+    # [OPTIMASI KRUSIAL] Abaikan voxel kosong berbobot rendah agar RAM tidak meledak
+    mesh = vbg.extract_triangle_mesh(weight_threshold=3.0)
+    
+    # [PERBAIKAN BUG] Konversi ke legacy format agar fungsi Open3D bisa menyimpan file PLY
+    print("[PELACAK] Menyimpan mesh mentah...")
+    legacy_mesh = mesh.to_legacy()
+    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon_raw.ply"), legacy_mesh)
+    
+    # Pembersihan RAM agresif sebelum masuk algoritma clustering post-process
+    del vbg
+    del mesh
+    torch.cuda.empty_cache()
+    
+    print("\n[PELACAK] Fase 4: Post-processing mesh...")
+    final_mesh = post_process_mesh(legacy_mesh, num_cluster)
+    o3d.io.write_triangle_mesh(os.path.join(dataset.model_path, "recon_post.ply"), final_mesh)
     print("done!")
 
 
