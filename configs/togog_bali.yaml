@@ -1,0 +1,36 @@
+project:
+  name: radegs_togog_bali
+  dataset: Dataset Togog Bali
+dataset:
+  root: /home/pande/dataset_togog_bali
+output:
+  root: /home/pande/radegs_results/togog_bali
+results:
+  csv: research_results/experiment_results.csv
+training:
+  extra_args: []
+rendering:
+  enabled: true
+  extra_args: []
+mesh:
+  enabled: true
+  resolution: 2
+  num_cluster: 8
+  depth_ratio: 0.5
+  extra_args: []
+resource_monitor:
+  interval_seconds: 1.0
+resource_guard:
+  enabled: true
+  cooldown_before_mesh_seconds: 5
+  minimum_free_ram_gb: 4
+  minimum_free_vram_mb: 1024
+  wait_if_memory_low: true
+  check_interval_seconds: 10
+  max_wait_seconds: 300
+geometry_evaluation:
+  enabled: false
+  gt_root: null
+  sample_points: 100000
+  distance_threshold: null
+  seed: 0

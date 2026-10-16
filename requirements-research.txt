@@ -1,0 +1,4 @@
+# Dependencies used only by the research orchestration layer.
+PyYAML
+psutil
+scipy
