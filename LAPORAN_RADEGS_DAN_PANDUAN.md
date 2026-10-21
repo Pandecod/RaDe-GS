@@ -1,6 +1,6 @@
 # Laporan Kondisi RaDe-GS dan Panduan Penggunaan
 
-Tanggal pemeriksaan: 16 Oktober 2026.
+Tanggal pemeriksaan terakhir: 21 Oktober 2026 (update urutan pipeline Visual 2D Metrics).
 
 Laporan ini berdasarkan pembacaan kode repository yang sedang dibuka dan
 pengujian ulang. Pembuatan laporan tidak mengubah kode, konfigurasi, atau
@@ -59,15 +59,15 @@ Validasi dataset saat discovery memeriksa struktur/file, bukan membuktikan isi
 COLMAP benar, gambar lengkap, atau semua kamera cocok. Isi rusak masih dapat
 gagal ketika dibaca oleh RaDe-GS.
 
-Alur default satu scene:
+Alur default satu scene (urutan terbaru):
 
 ```text
 Validasi dataset
   -> Training RaDe-GS
   -> Rendering
-  -> SSIM / PSNR / LPIPS
   -> Resource guard
   -> Ekstraksi dan analisis mesh
+  -> SSIM / PSNR / LPIPS  (setelah mesh selesai)
   -> Evaluasi geometri jika diaktifkan
   -> Summary JSON dan master CSV
   -> Scene berikutnya
@@ -216,7 +216,7 @@ digabung pada CLI.
 | `output.root` | Direktori hasil model dan research per scene |
 | `results.csv` | Master tabel hasil; path relatif dihitung dari root repository |
 | `training.extra_args` | Tambahan CLI training; default kosong |
-| `rendering.enabled` | Aktif secara default; jika false rendering/evaluasi citra dilewati |
+| `rendering.enabled` | Tidak berpengaruh pada pipeline run (rendering selalu dijalankan); field tetap ada di config untuk kompatibilitas |
 | `rendering.extra_args` | Tambahan CLI rendering |
 | `mesh.enabled` | Aktif secara default |
 | `mesh.resolution/num_cluster/depth_ratio` | Dikunci pada 2 / 8 / 0.5 oleh validasi |
@@ -284,7 +284,41 @@ konfigurasi eksperimen dan menghasilkan experiment ID berbeda.
 | `LICENSE.md` | Ketentuan lisensi penggunaan kode |
 | `.gitignore` | Pengaturan file yang tidak dimasukkan Git |
 | `.gitmodules` | Daftar submodule repository |
-| `LAPORAN_RADEGS_DAN_PANDUAN.md` | Laporan dan panduan Indonesia ini |
+| `LAPORAN_RADEGS_DAN_PANDUAN.md` | Laporan dan panduan Indonesia ini (diperbarui 21 Oktober 2026) |
+
+> **File dan folder yang ditambahkan oleh Research Pipeline (tidak ada di repository asli RaDe-GS):**
+>
+> | File / Folder baru | Keterangan |
+> |---|---|
+> | `research_pipeline/` | Seluruh folder orchestration pipeline baru |
+> | `research_pipeline/__init__.py` | Penanda package |
+> | `research_pipeline/run_all.py` | CLI utama pipeline |
+> | `research_pipeline/config.py` | Validasi YAML dan default konfigurasi |
+> | `research_pipeline/scene_discovery.py` | Penemuan scene COLMAP |
+> | `research_pipeline/commands.py` | Penyusunan argument subprocess |
+> | `research_pipeline/runner.py` | Eksekutor stage sinkron **[diperbarui 21 Okt 2026]** |
+> | `research_pipeline/process_monitor.py` | Sampling RAM/VRAM |
+> | `research_pipeline/gpu_monitor.py` | Query nvidia-smi |
+> | `research_pipeline/resource_guard.py` | Pemeriksaan memori sebelum mesh |
+> | `research_pipeline/training_parser.py` | Parser log training ke CSV |
+> | `research_pipeline/image_evaluator.py` | Worker SSIM/PSNR/LPIPS |
+> | `research_pipeline/mesh_analyzer.py` | Deteksi OOM dan metadata mesh |
+> | `research_pipeline/geometry_evaluator.py` | Evaluasi Chamfer/F1 mesh terhadap GT |
+> | `research_pipeline/results.py` | ID eksperimen, summary, dan master CSV |
+> | `research_pipeline/utils.py` | Baca/tulis JSON atomik |
+> | `configs/` | Folder konfigurasi pipeline (baru) |
+> | `configs/togog_bali.yaml` | Config utama proyek Togog Bali |
+> | `tests/` | Folder test CPU-only (baru) |
+> | `tests/test_research_pipeline.py` | Test dasar pipeline |
+> | `tests/test_phase2.py` s.d. `test_phase7.py` | Test per fase pipeline |
+> | `tests/test_pipeline_flow.py` | Test urutan stage penuh **[diperbarui 21 Okt 2026]** |
+> | `research_results/` | Folder master CSV default (dibuat saat run pertama) |
+> | `docs/` | Catatan metodologi penelitian |
+> | `requirements-research.txt` | Dependency tambahan: PyYAML, psutil, SciPy |
+> | `RESEARCH_PIPELINE.md` | Panduan pipeline bahasa Inggris |
+> | `PIPELINE_SPEC.md` | Spesifikasi kebutuhan pipeline |
+> | `hasil_analisa.md` | Catatan analisis repository |
+> | `LAPORAN_RADEGS_DAN_PANDUAN.md` | Laporan dan panduan ini |
 
 README menyebut `metrics.py` pada salah satu contoh, tetapi nama file yang benar
 di checkout ini adalah `metric.py`. Untuk workflow otomatis, gunakan
@@ -299,7 +333,7 @@ di checkout ini adalah `metric.py`. Untuk workflow otomatis, gunakan
 | `config.py` | Default/validasi YAML, resolusi path, verifikasi extra_args terhadap CLI repository |
 | `scene_discovery.py` | Menemukan scene dan memeriksa struktur COLMAP |
 | `commands.py` | Menyusun argument list subprocess dan command untuk dry-run |
-| `runner.py` | Menjalankan stage secara sinkron, menangani cleanup/failure, memilih folder attempt |
+| `runner.py` | Menjalankan stage secara sinkron; urutan: training → rendering → mesh → image_metrics → geometry; menangani cleanup/failure dan memilih folder attempt **[diperbarui 21 Okt 2026: image_metrics dipindah ke setelah mesh]** |
 | `process_monitor.py` | Mengambil sampel RAM/RSS dan VRAM serta menghitung peak/rata-rata |
 | `gpu_monitor.py` | Query nvidia-smi dan dukungan path executable WSL |
 | `resource_guard.py` | Memeriksa ketersediaan memori sebelum mesh |
@@ -321,7 +355,7 @@ di checkout ini adalah `metric.py`. Untuk workflow otomatis, gunakan
 | `test_phase5.py` | Guard memori, OOM, metadata mesh dengan pembaca simulasi |
 | `test_phase6.py` | Definisi Chamfer/threshold dan command geometri |
 | `test_phase7.py` | Experiment ID, summary, CSV, resume/force, failure recovery |
-| `test_pipeline_flow.py` | Urutan stage lengkap dengan hasil simulasi, mesh OOM tanpa retry, geometri opsional |
+| `test_pipeline_flow.py` | Urutan stage lengkap (training→rendering→mesh→image_metrics), mesh OOM tanpa retry, geometri opsional **[diperbarui 21 Okt 2026]** |
 
 Untuk menjalankan ulang test:
 
@@ -454,3 +488,47 @@ ketika memang siap memulai training. Periksa telemetry NVIDIA, hasil metrik
 citra, mesh final, kebutuhan memori, serta GT jika dipakai. Setelah validasi itu
 berhasil, gunakan batch untuk seluruh scene. Tidak ada training nyata dijalankan
 untuk menyusun laporan ini.
+
+## 14. Perubahan Pipeline (21 Oktober 2026)
+
+Urutan stage pipeline diubah agar Visual 2D Metrics (PSNR, SSIM, LPIPS)
+diproses **setelah** mesh extraction selesai, bukan sebelumnya.
+
+**Urutan stage baru:**
+
+```text
+1. Training          -> latih model Gaussian Splatting
+2. Rendering         -> render gambar dari model
+3. Mesh Extraction   -> ekstrak mesh 3D (recon_post.ply)
+4. Visual 2D Metrics -> hitung & simpan PSNR / SSIM / LPIPS
+5. Geometry 3D       -> SKIP by default (jalankan nanti secara manual)
+```
+
+**File yang diubah:**
+
+| File | Perubahan |
+|---|---|
+| `research_pipeline/runner.py` | Hapus guard `rendering.enabled`; pisah rendering dari image_metrics; pindahkan image_metrics ke setelah mesh |
+| `tests/test_pipeline_flow.py` | Update 3 test: urutan stage baru, fixture OOM rendering, assertions geometry test |
+
+**Tidak ada perubahan pada:**
+- Environment conda / package Python
+- `train.py`, `render.py`, `mesh_extract.py`
+- `config.py`, `requirements*.txt`
+
+**Cara menjalankan Geometry 3D nanti (manual):**
+
+Aktifkan di config YAML saat siap:
+```yaml
+geometry_evaluation:
+  enabled: true
+  gt_root: /path/to/ground_truth_meshes
+```
+Atau jalankan langsung per scene:
+```bash
+python -m research_pipeline.geometry_evaluator \
+  --reconstruction /output/scene/recon_post.ply \
+  --ground-truth /gt/scene.ply \
+  --sample-points 100000 --seed 0 \
+  --scene-name nama_scene --output /output/scene
+```

@@ -150,28 +150,17 @@ def execute_scene(config: dict, scene: Scene, output: Path,
             result["warnings"].append(f"Training metrics could not be parsed: {exc}")
         if process.returncode != 0:
             raise StageFailure(stage, f"Training exited with code {process.returncode}")
-        if config["rendering"]["enabled"]:
-            from research_pipeline.image_evaluator import render_statistics
-            from research_pipeline.utils import read_json
-            stage = "rendering"
-            process = executor(result["commands"][stage], output / "research/logs/rendering.log",
-                               config["resource_monitor"]["interval_seconds"])
-            result["rendering"] = {"duration_seconds": process.duration_seconds, **process.metrics,
-                                  **render_statistics(output, process.duration_seconds)}
-            result["warnings"].extend(process.warnings)
-            if process.returncode:
-                raise StageFailure(stage, f"Rendering exited with code {process.returncode}")
-            stage = "image_metrics"
-            process = executor(result["commands"][stage], output / "research/logs/image_metrics.log",
-                               config["resource_monitor"]["interval_seconds"])
-            if process.returncode:
-                raise StageFailure(stage, f"Image evaluation exited with code {process.returncode}")
-            image_metrics = read_json(output / "research/image_metrics.json")
-            if image_metrics.get("image_count", 0) <= 0:
-                raise StageFailure(stage, "Image evaluation produced no image metrics")
-            result["rendering"].update({k: image_metrics.get(k) for k in ("ssim", "psnr", "lpips", "split", "method")})
-            result["rendering"]["evaluation_image_count"] = image_metrics["image_count"]
-            result["warnings"].extend(image_metrics.get("warnings", []))
+        # Rendering selalu dijalankan (tanpa guard config)
+        from research_pipeline.image_evaluator import render_statistics
+        from research_pipeline.utils import read_json
+        stage = "rendering"
+        process = executor(result["commands"][stage], output / "research/logs/rendering.log",
+                           config["resource_monitor"]["interval_seconds"])
+        result["rendering"] = {"duration_seconds": process.duration_seconds, **process.metrics,
+                              **render_statistics(output, process.duration_seconds)}
+        result["warnings"].extend(process.warnings)
+        if process.returncode:
+            raise StageFailure(stage, f"Rendering exited with code {process.returncode}")
         if config["mesh"]["enabled"]:
             from research_pipeline.mesh_analyzer import analyze_mesh, is_oom_failure
             from research_pipeline.resource_guard import wait_until_ready
@@ -195,6 +184,18 @@ def execute_scene(config: dict, scene: Scene, output: Path,
             result["mesh_extraction"] = {**mesh_config, **analyze_mesh(
                 output / "recon_post.ply", mesh_process_metrics, scene.name
             )}
+        # Visual 2D Metrics (PSNR, SSIM, LPIPS) - diproses setelah mesh extraction
+        stage = "image_metrics"
+        process = executor(result["commands"][stage], output / "research/logs/image_metrics.log",
+                           config["resource_monitor"]["interval_seconds"])
+        if process.returncode:
+            raise StageFailure(stage, f"Image evaluation exited with code {process.returncode}")
+        image_metrics = read_json(output / "research/image_metrics.json")
+        if image_metrics.get("image_count", 0) <= 0:
+            raise StageFailure(stage, "Image evaluation produced no image metrics")
+        result["rendering"].update({k: image_metrics.get(k) for k in ("ssim", "psnr", "lpips", "split", "method")})
+        result["rendering"]["evaluation_image_count"] = image_metrics["image_count"]
+        result["warnings"].extend(image_metrics.get("warnings", []))
         if config["geometry_evaluation"]["enabled"]:
             from research_pipeline.utils import read_json
 

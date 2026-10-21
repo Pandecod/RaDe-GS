@@ -33,6 +33,11 @@ class PipelineFlow(unittest.TestCase):
                         folder = output / "train/ours_30000" / kind
                         folder.mkdir(parents=True, exist_ok=True)
                         (folder / "00000.png").write_bytes(b"fixture")
+                elif command[1] == "mesh_extract.py":
+                    stage = "mesh_extraction"
+                    self.assertEqual(command[-6:], ["-r", "2", "--num_cluster", "8",
+                                                    "--depth_ratio", "0.5"])
+                    (output / "recon_post.ply").write_bytes(b"fixture")
                 elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
                     stage = "image_metrics"
                     write_json(output / "research/image_metrics.json", {
@@ -41,10 +46,7 @@ class PipelineFlow(unittest.TestCase):
                         "warnings": [],
                     })
                 else:
-                    stage = "mesh_extraction"
-                    self.assertEqual(command[-6:], ["-r", "2", "--num_cluster", "8",
-                                                    "--depth_ratio", "0.5"])
-                    (output / "recon_post.ply").write_bytes(b"fixture")
+                    stage = "unknown"
                 stages.append(stage)
                 return ProcessResult(0, 1.0, {"peak_ram_mb": 10.0}, [])
 
@@ -53,8 +55,8 @@ class PipelineFlow(unittest.TestCase):
             with patch("research_pipeline.mesh_analyzer.analyze_mesh",
                        return_value=mesh_metrics):
                 result = execute_scene(config, scene, output, fixture)
-            self.assertEqual(stages, ["training", "rendering", "image_metrics",
-                                      "mesh_extraction"])
+            self.assertEqual(stages, ["training", "rendering", "mesh_extraction",
+                                      "image_metrics"])
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["training"]["final_iteration"], 30000)
             self.assertEqual(result["rendering"]["image_count"], 1)
@@ -66,7 +68,6 @@ class PipelineFlow(unittest.TestCase):
             scene = Scene("togog", make_scene(root / "data", "togog"))
             output = root / "out/togog"
             config = copy.deepcopy(DEFAULTS)
-            config["rendering"]["enabled"] = False
             config["resource_guard"]["enabled"] = False
             commands_seen = []
 
@@ -76,13 +77,19 @@ class PipelineFlow(unittest.TestCase):
                 if command[1] == "train.py":
                     log_path.write_text("Training complete.\n", encoding="utf-8")
                     return ProcessResult(0, 1.0)
+                elif command[1] == "render.py":
+                    # Rendering selalu jalan; buat folder renders agar render_statistics tidak error
+                    (output / "train/ours_30000/renders").mkdir(parents=True, exist_ok=True)
+                    (output / "train/ours_30000/gt").mkdir(parents=True, exist_ok=True)
+                    log_path.write_text("Rendering complete.\n", encoding="utf-8")
+                    return ProcessResult(0, 1.0)
                 log_path.write_text("CUDA out of memory\n", encoding="utf-8")
                 return ProcessResult(1, 1.0)
 
             result = execute_scene(config, scene, output, fixture)
             self.assertEqual(result["failed_stage"], "mesh_extraction_oom")
-            self.assertEqual(len(commands_seen), 2)
-            self.assertEqual(commands_seen[1][-6:], ["-r", "2", "--num_cluster", "8",
+            self.assertEqual(len(commands_seen), 3)
+            self.assertEqual(commands_seen[2][-6:], ["-r", "2", "--num_cluster", "8",
                                                      "--depth_ratio", "0.5"])
 
     def test_optional_geometry_runs_after_mesh(self):
@@ -94,7 +101,6 @@ class PipelineFlow(unittest.TestCase):
             gt_root.mkdir()
             (gt_root / "togog.ply").write_bytes(b"fixture")
             config = copy.deepcopy(DEFAULTS)
-            config["rendering"]["enabled"] = False
             config["resource_guard"]["enabled"] = False
             config["geometry_evaluation"].update(enabled=True, gt_root=str(gt_root))
             stages = []
@@ -104,9 +110,22 @@ class PipelineFlow(unittest.TestCase):
                 log_path.write_text("fixture\n", encoding="utf-8")
                 if command[1] == "train.py":
                     stages.append("training")
+                elif command[1] == "render.py":
+                    stages.append("rendering")
+                    for kind in ("renders", "gt"):
+                        folder = output / "train/ours_30000" / kind
+                        folder.mkdir(parents=True, exist_ok=True)
+                        (folder / "00000.png").write_bytes(b"fixture")
                 elif command[1] == "mesh_extract.py":
                     stages.append("mesh_extraction")
                     (output / "recon_post.ply").write_bytes(b"fixture")
+                elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
+                    stages.append("image_metrics")
+                    write_json(output / "research/image_metrics.json", {
+                        "ssim": 0.9, "psnr": 20.0, "lpips": 0.1,
+                        "image_count": 1, "split": "train", "method": "ours_30000",
+                        "warnings": [],
+                    })
                 else:
                     stages.append("geometry_evaluation")
                     write_json(output / "research/geometry_metrics.json", {
@@ -119,7 +138,7 @@ class PipelineFlow(unittest.TestCase):
             with patch("research_pipeline.mesh_analyzer.analyze_mesh", return_value={
                     "vertex_count": 3, "face_count": 1, "file_size_mb": 0.1}):
                 result = execute_scene(config, scene, output, fixture)
-            self.assertEqual(stages, ["training", "mesh_extraction", "geometry_evaluation"])
+            self.assertEqual(stages, ["training", "rendering", "mesh_extraction", "image_metrics", "geometry_evaluation"])
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["geometry"]["chamfer_distance"], 0.1)
 
