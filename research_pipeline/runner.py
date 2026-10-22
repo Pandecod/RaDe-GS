@@ -64,8 +64,9 @@ def cleanup_process(process: subprocess.Popen, children: list | None = None) -> 
         raise RuntimeError("Process descendants could not be stopped; refusing next stage")
 
 def run_process(command: list[str], log_path: Path, interval: float = 1.0,
-                sample: Callable | None = None) -> ProcessResult:
+                sample: Callable | None = None, tee: bool = True) -> ProcessResult:
     import psutil
+    import threading
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Unique attempt output directories mean logs are never overwritten.
     from research_pipeline.process_monitor import ProcessMonitor
@@ -75,9 +76,23 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
     process = None
     with log_path.open("xb") as log:
         try:
-            process = subprocess.Popen(command, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
+            process = subprocess.Popen(command, cwd=REPO,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL, env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 start_new_session=(os.name == "posix"))
+
+            def _drain(src, log_file):
+                """Read subprocess output line-by-line; write to log and optionally to stderr."""
+                for raw in src:
+                    log_file.write(raw)
+                    if tee:
+                        sys.stderr.buffer.write(raw)
+                        sys.stderr.buffer.flush()
+
+            drain_thread = threading.Thread(
+                target=_drain, args=(process.stdout, log), daemon=True)
+            drain_thread.start()
+
             while process.poll() is None:
                 try:
                     for child in psutil.Process(process.pid).children(recursive=True):
@@ -92,6 +107,8 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
                     process.wait(timeout=interval)
                 except subprocess.TimeoutExpired:
                     pass
+
+            drain_thread.join()
             result = ProcessResult(process.returncode, time.monotonic() - started,
                                    monitor.metrics(), monitor.warnings)
         finally:
