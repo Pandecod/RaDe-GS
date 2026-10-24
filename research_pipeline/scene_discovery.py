@@ -34,3 +34,12 @@ def validation_errors(scene: Scene) -> list[str]:
     if not any((sparse / ("points3D" + suffix)).is_file() for suffix in (".bin", ".txt")):
         errors.append("Missing points3D.bin or points3D.txt in sparse/0")
     return errors
+
+
+def start_validation_errors(scene: Scene, start_from: str) -> list[str]:
+    if start_from == "training":
+        return validation_errors(scene)
+    if start_from == "colmap":
+        from research_pipeline.colmap_preprocessor import raw_input_errors
+        return raw_input_errors(scene)
+    raise ValueError(f"Unsupported start stage: {start_from}")

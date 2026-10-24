@@ -16,6 +16,16 @@ OOM_MARKERS = (
 )
 
 
+def cluster_triangle_threshold(cluster_sizes, cluster_to_keep: int,
+                               minimum_triangles: int = 50) -> int:
+    """Return a safe cutoff when fewer clusters exist than requested."""
+    sizes = sorted(int(size) for size in cluster_sizes)
+    if not sizes:
+        raise ValueError("Extracted mesh has no connected triangle clusters")
+    keep = min(max(int(cluster_to_keep), 1), len(sizes))
+    return max(sizes[-keep], int(minimum_triangles))
+
+
 def is_oom_failure(log_path: Path, returncode: int) -> bool:
     text = log_path.read_text(encoding="utf-8", errors="replace").lower()
     # A direct subprocess reports SIGKILL as -9; wrappers sometimes report 137.

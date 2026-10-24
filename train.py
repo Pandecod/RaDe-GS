@@ -36,6 +36,7 @@ from utils.graphics_utils import (
     depth_to_normal,
 )
 from utils.image_utils import psnr
+from utils.training_profiler import profile_phase
 from utils.loss_utils import (
     l1_loss,
     ssim,
@@ -45,6 +46,25 @@ from utils.loss_utils import (
 
 
 def training(
+    dataset, opt, pipe, testing_iterations, saving_iterations,
+    checkpoint_iterations, checkpoint, debug_from, profile_options=None,
+):
+    tb_writer = prepare_output_and_logger(dataset)
+    arguments = (dataset, opt, pipe, testing_iterations, saving_iterations,
+                 checkpoint_iterations, checkpoint, debug_from)
+    if profile_options is not None and profile_options.profile_training:
+        from utils.training_profiler import TrainingProfiler
+        metadata = {
+            "model_parameters": vars(dataset), "optimization_parameters": vars(opt),
+            "pipeline_parameters": vars(pipe), "command_line": sys.argv,
+            "profile_options": vars(profile_options),
+        }
+        with TrainingProfiler(dataset.model_path, profile_options, metadata) as profiler:
+            return _training(*arguments, tb_writer=tb_writer, profiler=profiler)
+    return _training(*arguments, tb_writer=tb_writer, profiler=None)
+
+
+def _training(
     dataset,
     opt,
     pipe,
@@ -53,15 +73,17 @@ def training(
     checkpoint_iterations,
     checkpoint,
     debug_from,
+    *, tb_writer, profiler,
 ):
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
+    if profiler is not None:
+        profiler.describe_scene(scene.getTrainCameras(), gaussians)
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     kernel_size = dataset.kernel_size
@@ -73,7 +95,8 @@ def training(
     if dataset.disable_filter3D:
         gaussians.reset_3D_filter()
     else:
-        gaussians.compute_3D_filter(cameras=trainCameras)
+        with profile_phase(profiler, "filter3d"):
+            gaussians.compute_3D_filter(cameras=trainCameras)
 
     if opt.lambda_multi_view_ncc > 0 or opt.lambda_multi_view_geo > 0:
         patchmatch = PatchMatch(
@@ -122,6 +145,8 @@ def training(
             except Exception as e:
                 network_gui.conn = None
 
+        if profiler is not None:
+            profiler.begin_iteration(iteration, gaussians)
         iter_start.record()
 
         gaussians.update_learning_rate(iteration)
@@ -140,14 +165,15 @@ def training(
             pipe.debug = True
 
         reg_kick_on = iteration >= opt.regularization_from_iter
-        render_pkg = render(
-            viewpoint_cam,
-            gaussians,
-            pipe,
-            background,
-            kernel_size,
-            require_depth=reg_kick_on,
-        )
+        with profile_phase(profiler, "forward"):
+            render_pkg = render(
+                viewpoint_cam,
+                gaussians,
+                pipe,
+                background,
+                kernel_size,
+                require_depth=reg_kick_on,
+            )
         rendered_image: torch.Tensor
         rendered_image, viewspace_point_tensor, visibility_filter, radii = (
             render_pkg["render"],
@@ -155,39 +181,43 @@ def training(
             render_pkg["visibility_filter"],
             render_pkg["radii"],
         )
-        gt_image = viewpoint_cam.original_image.cuda()
+        if profiler is not None:
+            profiler.capture_render(render_pkg, viewpoint_cam, gaussians.active_sh_degree, reg_kick_on)
+        with profile_phase(profiler, "loss"):
+            gt_image = viewpoint_cam.original_image.cuda()
 
-        Ll1_render = L1_loss_appearance(rendered_image, gt_image, gaussians, viewpoint_cam.uid)
-        # normal consistency
-        if reg_kick_on and opt.lambda_depth_normal > 0:
-            rendered_expected_depth: torch.Tensor = render_pkg["expected_depth"]
-            rendered_median_depth: torch.Tensor = render_pkg["median_depth"]
-            rendered_normal: torch.Tensor = render_pkg["normal"]
-            if 0.0 < dataset.depth_ratio < 1.0:
-                depth_normal = depth_double_to_normal(viewpoint_cam, rendered_expected_depth, rendered_median_depth)
-                normal_error_map = 1 - torch.linalg.vecdot(rendered_normal.unsqueeze(0), depth_normal, dim=1)
-                depth_normal_loss = (1 - dataset.depth_ratio) * normal_error_map[0].mean() + dataset.depth_ratio * normal_error_map[1].mean()
-                depth_normal = None
+            Ll1_render = L1_loss_appearance(rendered_image, gt_image, gaussians, viewpoint_cam.uid)
+            # normal consistency
+            if reg_kick_on and opt.lambda_depth_normal > 0:
+                rendered_expected_depth: torch.Tensor = render_pkg["expected_depth"]
+                rendered_median_depth: torch.Tensor = render_pkg["median_depth"]
+                rendered_normal: torch.Tensor = render_pkg["normal"]
+                if 0.0 < dataset.depth_ratio < 1.0:
+                    depth_normal = depth_double_to_normal(viewpoint_cam, rendered_expected_depth, rendered_median_depth)
+                    normal_error_map = 1 - torch.linalg.vecdot(rendered_normal.unsqueeze(0), depth_normal, dim=1)
+                    depth_normal_loss = (1 - dataset.depth_ratio) * normal_error_map[0].mean() + dataset.depth_ratio * normal_error_map[1].mean()
+                    depth_normal = None
+                else:
+                    depth_map = rendered_expected_depth if dataset.depth_ratio < 1.0 else rendered_median_depth
+                    depth_normal = depth_to_normal(viewpoint_cam, depth_map)
+                    normal_error_map = 1 - torch.linalg.vecdot(rendered_normal, depth_normal, dim=0)
+                    depth_normal_loss = normal_error_map.mean()
             else:
-                depth_map = rendered_expected_depth if dataset.depth_ratio < 1.0 else rendered_median_depth
-                depth_normal = depth_to_normal(viewpoint_cam, depth_map)
-                normal_error_map = 1 - torch.linalg.vecdot(rendered_normal, depth_normal, dim=0)
-                depth_normal_loss = normal_error_map.mean()
-        else:
-            depth_normal_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
+                depth_normal_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
 
-        # patch match loss
-        if reg_kick_on and opt.lambda_multi_view_ncc > 0:
-            nearest_cam = None if len(viewpoint_cam.nearest_id) == 0 else scene.getTrainCameras()[sample(viewpoint_cam.nearest_id, 1)[0]]
-            ncc_loss, geo_loss = patchmatch(gaussians, render_pkg, viewpoint_cam, nearest_cam, iteration, depth_normal)
-        else:
-            ncc_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
-            geo_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
+            # patch match loss
+            if reg_kick_on and opt.lambda_multi_view_ncc > 0:
+                nearest_cam = None if len(viewpoint_cam.nearest_id) == 0 else scene.getTrainCameras()[sample(viewpoint_cam.nearest_id, 1)[0]]
+                ncc_loss, geo_loss = patchmatch(gaussians, render_pkg, viewpoint_cam, nearest_cam, iteration, depth_normal)
+            else:
+                ncc_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
+                geo_loss = torch.tensor([0], dtype=torch.float32, device="cuda")
 
-        rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image.unsqueeze(0), gt_image.unsqueeze(0)))
+            rgb_loss = (1.0 - opt.lambda_dssim) * Ll1_render + opt.lambda_dssim * (1.0 - ssim(rendered_image.unsqueeze(0), gt_image.unsqueeze(0)))
 
-        loss = rgb_loss + opt.lambda_depth_normal * depth_normal_loss + opt.lambda_multi_view_ncc * ncc_loss + opt.lambda_multi_view_geo * geo_loss
-        loss.backward()
+            loss = rgb_loss + opt.lambda_depth_normal * depth_normal_loss + opt.lambda_multi_view_ncc * ncc_loss + opt.lambda_multi_view_geo * geo_loss
+        with profile_phase(profiler, "backward"):
+            loss.backward()
 
         iter_end.record()
 
@@ -236,16 +266,21 @@ def training(
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(
-                        opt.densify_grad_threshold,
-                        0.05,
-                        scene.cameras_extent,
-                        size_threshold,
-                    )
+                    densify_before = gaussians.get_xyz.shape[0] if profiler is not None else 0
+                    with profile_phase(profiler, "densification"):
+                        densify_result = gaussians.densify_and_prune(
+                            opt.densify_grad_threshold,
+                            0.05,
+                            scene.cameras_extent,
+                            size_threshold,
+                        )
+                    if profiler is not None:
+                        profiler.densification(densify_before, gaussians.get_xyz.shape[0], densify_result)
                     if dataset.disable_filter3D:
                         gaussians.reset_3D_filter()
                     else:
-                        gaussians.compute_3D_filter(cameras=trainCameras)
+                        with profile_phase(profiler, "filter3d"):
+                            gaussians.compute_3D_filter(cameras=trainCameras)
 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()
@@ -253,12 +288,14 @@ def training(
             if iteration % 100 == 0 and iteration > opt.densify_until_iter and not dataset.disable_filter3D:
                 if iteration < opt.iterations - 100:
                     # don't update in the end of training
-                    gaussians.compute_3D_filter(cameras=trainCameras)
+                    with profile_phase(profiler, "filter3d"):
+                        gaussians.compute_3D_filter(cameras=trainCameras)
 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step()
-                gaussians.optimizer.zero_grad(set_to_none=True)
+                with profile_phase(profiler, "optimizer"):
+                    gaussians.optimizer.step()
+                    gaussians.optimizer.zero_grad(set_to_none=True)
 
             if iteration in checkpoint_iterations:
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -266,6 +303,17 @@ def training(
                     (gaussians.capture(), iteration),
                     scene.model_path + "/chkpnt" + str(iteration) + ".pth",
                 )
+
+        if profiler is not None:
+            profiler.finish_iteration(
+                gaussians,
+                opacity_reset=(iteration < opt.densify_until_iter and
+                    (iteration % opt.opacity_reset_interval == 0 or
+                     (dataset.white_background and iteration == opt.densify_from_iter))),
+                evaluation=iteration in testing_iterations,
+                save=iteration in saving_iterations,
+                checkpoint=iteration in checkpoint_iterations,
+            )
 
 
 def prepare_output_and_logger(args):
@@ -383,6 +431,14 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[15000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
+    # Diagnostic options only; optimization/model defaults remain unchanged.
+    parser.add_argument("--profile_training", action="store_true", default=False)
+    parser.add_argument("--profile_interval", type=int, default=100)
+    parser.add_argument("--profile_from", type=int, default=1)
+    parser.add_argument("--profile_until", type=int, default=0)
+    parser.add_argument("--profile_control_samples", action="store_true", default=False)
+    parser.add_argument("--profile_no_raster", action="store_true", default=False)
+    parser.add_argument("--profile_gpu_interval", type=float, default=1.0)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
 
@@ -403,6 +459,7 @@ if __name__ == "__main__":
         checkpoint_iterations=args.checkpoint_iterations,
         checkpoint=args.start_checkpoint,
         debug_from=args.debug_from,
+        profile_options=args,
     )
 
     # All done

@@ -16,10 +16,12 @@ pip install -r requirements-research.txt
 `trimesh` is already present in the RaDe-GS requirements. The pipeline adds
 PyYAML, psutil, and SciPy.
 
-## Dataset layout
+## Dataset layout and starting stage
 
-COLMAP preprocessing happens before this pipeline. Every direct child directory
-under `dataset.root` is one scene and its folder name is the scene/object name:
+Every direct child directory under `dataset.root` is one scene. To run COLMAP
+inside the pipeline, put raw images in `<scene>/input/` and use
+`--start-from colmap`. The completed `images/` and `sparse/0/` are consumed by
+training automatically. Without that option, the processed layout is required:
 
 ```text
 /home/pande/dataset_togog_bali/
@@ -48,10 +50,21 @@ Paths may be absolute or relative to the repository root.
 python research_pipeline/run_all.py --config configs/togog_bali.yaml --list-scenes
 python research_pipeline/run_all.py --config configs/togog_bali.yaml --dry-run
 python research_pipeline/run_all.py --config configs/togog_bali.yaml
+python research_pipeline/run_all.py --config configs/togog_bali.yaml --start-from colmap
 python research_pipeline/run_all.py --config configs/togog_bali.yaml --scene togog_ganesha
 python research_pipeline/run_all.py --config configs/togog_bali.yaml --resume
 python research_pipeline/run_all.py --config configs/togog_bali.yaml --force
 ```
+
+Training progress is forwarded live, including `tqdm` updates that use carriage
+returns. Pressing Ctrl+C cleans up the active subprocess and exits with status
+130 without printing a Python traceback.
+
+`--start-from training` is the default and preserves the original behavior.
+`--start-from colmap` runs feature extraction, exhaustive matching, mapping, and
+undistortion before training. COLMAP writes to a unique directory below
+`<scene>/.pipeline_colmap/`; `images/` and `sparse/0/` are published only after
+the staged result passes validation. A complete existing scene skips COLMAP.
 
 `--resume` skips only a row whose deterministic experiment ID matches and whose
 status is `success`. Failed experiments run again. `--force` always runs and
@@ -67,9 +80,10 @@ python train.py -s <scene> -m <output>
 
 Only `training.extra_args` can add training arguments. Rendering invokes the
 repository's `render.py`. Image evaluation reuses the repository SSIM and PSNR
-functions and its VGG LPIPS implementation. When a test render has images it is
-evaluated; otherwise the training render is evaluated, matching this checkout's
-`metric.py` behavior for the default non-`--eval` training configuration.
+functions and its VGG LPIPS implementation. Set `image_metrics.enabled: false`
+to skip this extra GPU stage while retaining rendered images. When a test render
+has images it is evaluated; otherwise the training render is evaluated, matching
+this checkout's `metric.py` behavior for the default non-`--eval` configuration.
 
 Mesh extraction always uses the verified experiment command:
 
@@ -84,7 +98,8 @@ mesh parameters.
 ## Resource monitoring and OOM protection
 
 The process monitor samples total RSS for the subprocess tree with psutil and
-process-attributed VRAM with `nvidia-smi`. Monitoring failures do not terminate
+process-attributed VRAM with `nvidia-smi`. The supplied configuration samples
+every five seconds to reduce monitoring overhead. Monitoring failures do not terminate
 training/rendering/mesh; unavailable values remain empty and a warning is saved.
 
 Before mesh extraction, the resource guard waits for every prior subprocess to
@@ -107,6 +122,7 @@ attempt:
   recon_raw.ply
   recon_post.ply
   research/
+    logs/colmap.log
     logs/training.log
     logs/rendering.log
     logs/image_metrics.log
@@ -129,7 +145,7 @@ master CSV write error is critical and stops the batch. Other scene failures are
 recorded before the next scene starts.
 
 The experiment ID is SHA-256 over canonical JSON containing the scene name and
-training, rendering, mesh, and geometry configuration. Each row also records the
+COLMAP, training, rendering, mesh, and geometry configuration. Each row also records the
 Git commit/dirty state, Python/PyTorch/CUDA versions, GPU name, and driver when
 available.
 
@@ -148,6 +164,6 @@ remain null with a warning.
 Dry run validates the configuration and every dataset, builds all commands, and
 prints them. It imports no model/CUDA code, starts no subprocess, and writes no
 result or fake metric. Stage failures are recorded in `summary.json` and the
-master CSV. Supported stages include dataset validation, training, rendering,
+master CSV. Supported stages include dataset validation, COLMAP, training, rendering,
 image metrics, mesh resource check, mesh extraction/OOM, geometry evaluation,
 and result recording.

@@ -21,6 +21,15 @@ class Phase7(unittest.TestCase):
         changed = copy.deepcopy(DEFAULTS)
         changed["training"]["extra_args"] = ["--iterations", "10"]
         self.assertNotEqual(first, experiment_id("togog", changed))
+        changed = copy.deepcopy(DEFAULTS)
+        changed["dataset"]["root"] = "/different/dataset"
+        self.assertNotEqual(first, experiment_id("togog", changed))
+        changed = copy.deepcopy(DEFAULTS)
+        changed["image_metrics"]["enabled"] = False
+        self.assertNotEqual(first, experiment_id("togog", changed))
+        changed = copy.deepcopy(DEFAULTS)
+        changed["colmap"]["camera_model"] = "PINHOLE"
+        self.assertNotEqual(first, experiment_id("togog", changed))
         self.assertNotEqual(first, experiment_id("other", DEFAULTS))
 
     def test_atomic_csv_upsert_resume_and_summary(self):

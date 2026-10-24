@@ -37,8 +37,11 @@ FIELDNAMES = [
 def experiment_id(scene_name: str, config: dict) -> str:
     payload = {
         "scene_name": scene_name,
+        "dataset": config["dataset"],
+        "colmap": config["colmap"],
         "training": config["training"],
         "rendering": config["rendering"],
+        "image_metrics": config["image_metrics"],
         "mesh": config["mesh"],
         "geometry_evaluation": config["geometry_evaluation"],
     }

@@ -3,14 +3,28 @@ import shlex
 import sys
 from pathlib import Path
 
-def commands(config: dict, dataset: Path, output: Path) -> dict[str, list[str]]:
-    result = {"training": [sys.executable, "train.py", "-s", str(dataset), "-m", str(output),
-                           *config["training"]["extra_args"]]}
+def commands(config: dict, dataset: Path, output: Path,
+             start_from: str = "training") -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    if start_from == "colmap":
+        colmap = config["colmap"]
+        result["colmap"] = [
+            sys.executable, "-m", "research_pipeline.colmap_preprocessor",
+            "--scene", str(dataset),
+            "--colmap-executable", colmap["executable"],
+            "--camera-model", colmap["camera_model"],
+            "--use-gpu", "1" if colmap["use_gpu"] else "0",
+        ]
+    elif start_from != "training":
+        raise ValueError(f"Unsupported start stage: {start_from}")
+    result["training"] = [sys.executable, "train.py", "-s", str(dataset), "-m", str(output),
+                          *config["training"]["extra_args"]]
     if config["rendering"]["enabled"]:
         result["rendering"] = [sys.executable, "render.py", "-m", str(output),
                                *config["rendering"]["extra_args"]]
-        result["image_metrics"] = [sys.executable, "-m", "research_pipeline.image_evaluator",
-                                    "--output", str(output), "--scene-name", dataset.name]
+        if config["image_metrics"]["enabled"]:
+            result["image_metrics"] = [sys.executable, "-m", "research_pipeline.image_evaluator",
+                                        "--output", str(output), "--scene-name", dataset.name]
     if config["mesh"]["enabled"]:
         result["mesh_extraction"] = [sys.executable, "mesh_extract.py", "-m", str(output),
                                      "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5",

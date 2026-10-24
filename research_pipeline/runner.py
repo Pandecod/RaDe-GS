@@ -11,7 +11,9 @@ import time
 from typing import Callable
 from research_pipeline.commands import commands
 from research_pipeline.config import REPO, resolve_path
-from research_pipeline.scene_discovery import Scene, validation_errors
+from research_pipeline.scene_discovery import (
+    Scene, start_validation_errors, validation_errors,
+)
 
 @dataclass
 class ProcessResult:
@@ -70,10 +72,15 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
     log_path.parent.mkdir(parents=True, exist_ok=True)
     # Unique attempt output directories mean logs are never overwritten.
     from research_pipeline.process_monitor import ProcessMonitor
-    monitor = ProcessMonitor()
+    import uuid
+    # TrainingProfiler writes its own GPU CSV; avoid duplicate NVIDIA queries.
+    monitor = ProcessMonitor(
+        log_path.with_name(log_path.stem + "_resources_" + uuid.uuid4().hex[:10] + ".csv"),
+        sample_gpu="--profile_training" not in command)
     started = time.monotonic()
     children: dict[int, psutil.Process] = {}
     process = None
+    drain_thread = None
     with log_path.open("xb") as log:
         try:
             process = subprocess.Popen(command, cwd=REPO,
@@ -82,9 +89,13 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
                 start_new_session=(os.name == "posix"))
 
             def _drain(src, log_file):
-                """Read subprocess output line-by-line; write to log and optionally to stderr."""
-                for raw in src:
+                """Forward output immediately, including tqdm carriage-return updates."""
+                while True:
+                    raw = src.read1(4096)
+                    if not raw:
+                        break
                     log_file.write(raw)
+                    log_file.flush()
                     if tee:
                         sys.stderr.buffer.write(raw)
                         sys.stderr.buffer.flush()
@@ -112,10 +123,17 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
             result = ProcessResult(process.returncode, time.monotonic() - started,
                                    monitor.metrics(), monitor.warnings)
         finally:
-            if process is not None:
-                cleanup_process(process, list(children.values()))
-            log.flush()
-            os.fsync(log.fileno())
+            try:
+                if process is not None:
+                    cleanup_process(process, list(children.values()))
+            finally:
+                if drain_thread is not None:
+                    drain_thread.join(timeout=5)
+                if process is not None and process.stdout is not None:
+                    process.stdout.close()
+                monitor.close()
+                log.flush()
+                os.fsync(log.fileno())
     return result
 
 def allocate_output(root: Path, name: str) -> Path:
@@ -128,7 +146,8 @@ def allocate_output(root: Path, name: str) -> Path:
     return base / "runs" / attempt
 
 def execute_scene(config: dict, scene: Scene, output: Path,
-                  executor: Callable = run_process) -> dict:
+                  executor: Callable = run_process,
+                  start_from: str = "training") -> dict:
     mesh_config = {
         "resolution": config["mesh"]["resolution"],
         "num_cluster": config["mesh"]["num_cluster"],
@@ -145,14 +164,37 @@ def execute_scene(config: dict, scene: Scene, output: Path,
     result = {"scene_name": scene.name, "object_name": scene.name,
               "dataset_path": str(scene.path), "output_path": str(output),
               "status": "failed", "failed_stage": None, "error_message": None,
+              "start_from": start_from, "colmap": {},
               "training": {}, "rendering": {}, "mesh_extraction": mesh_config,
               "geometry": geometry_config,
-              "warnings": [], "commands": commands(config, scene.path, output)}
+              "warnings": [], "commands": commands(
+                  config, scene.path, output, start_from)}
+
+    def record_failure(failed_stage: str, message: str) -> None:
+        if result["failed_stage"] is None:
+            result.update(failed_stage=failed_stage, error_message=message)
+        else:
+            result["warnings"].append(f"{failed_stage}: {message}")
+
     stage = "dataset_validation"
     try:
-        errors = validation_errors(scene)
+        errors = start_validation_errors(scene, start_from)
         if errors:
             raise StageFailure(stage, "; ".join(errors))
+        if start_from == "colmap":
+            stage = "colmap"
+            process = executor(
+                result["commands"][stage], output / "research/logs/colmap.log",
+                config["resource_monitor"]["interval_seconds"],
+            )
+            result["colmap"] = {"duration_seconds": process.duration_seconds,
+                                **process.metrics}
+            result["warnings"].extend(process.warnings)
+            if process.returncode:
+                raise StageFailure(stage, f"COLMAP exited with code {process.returncode}")
+            errors = validation_errors(scene)
+            if errors:
+                raise StageFailure(stage, "COLMAP output is incomplete: " + "; ".join(errors))
         stage = "training"
         process = executor(result["commands"][stage], output / "research/logs/training.log",
                            config["resource_monitor"]["interval_seconds"])
@@ -167,17 +209,46 @@ def execute_scene(config: dict, scene: Scene, output: Path,
             result["warnings"].append(f"Training metrics could not be parsed: {exc}")
         if process.returncode != 0:
             raise StageFailure(stage, f"Training exited with code {process.returncode}")
-        # Rendering selalu dijalankan (tanpa guard config)
-        from research_pipeline.image_evaluator import render_statistics
         from research_pipeline.utils import read_json
-        stage = "rendering"
-        process = executor(result["commands"][stage], output / "research/logs/rendering.log",
-                           config["resource_monitor"]["interval_seconds"])
-        result["rendering"] = {"duration_seconds": process.duration_seconds, **process.metrics,
-                              **render_statistics(output, process.duration_seconds)}
-        result["warnings"].extend(process.warnings)
-        if process.returncode:
-            raise StageFailure(stage, f"Rendering exited with code {process.returncode}")
+        if config["rendering"]["enabled"]:
+            from research_pipeline.image_evaluator import render_statistics
+
+            stage = "rendering"
+            process = executor(result["commands"][stage], output / "research/logs/rendering.log",
+                               config["resource_monitor"]["interval_seconds"])
+            result["rendering"] = {"duration_seconds": process.duration_seconds, **process.metrics,
+                                  **render_statistics(output, process.duration_seconds)}
+            result["warnings"].extend(process.warnings)
+            if process.returncode:
+                raise StageFailure(stage, f"Rendering exited with code {process.returncode}")
+
+            if config["image_metrics"]["enabled"]:
+                # Evaluate images before mesh extraction so a mesh OOM cannot
+                # discard useful PSNR, SSIM, and LPIPS results.
+                stage = "image_metrics"
+                try:
+                    process = executor(
+                        result["commands"][stage],
+                        output / "research/logs/image_metrics.log",
+                        config["resource_monitor"]["interval_seconds"],
+                    )
+                    if process.returncode:
+                        raise StageFailure(
+                            stage, f"Image evaluation exited with code {process.returncode}"
+                        )
+                    image_metrics = read_json(output / "research/image_metrics.json")
+                    if image_metrics.get("image_count", 0) <= 0:
+                        raise StageFailure(stage, "Image evaluation produced no image metrics")
+                    result["rendering"].update({
+                        key: image_metrics.get(key)
+                        for key in ("ssim", "psnr", "lpips", "split", "method")
+                    })
+                    result["rendering"]["evaluation_image_count"] = image_metrics["image_count"]
+                    result["warnings"].extend(image_metrics.get("warnings", []))
+                except StageFailure as exc:
+                    record_failure(exc.stage, str(exc))
+                except (ImportError, OSError, ValueError, RuntimeError) as exc:
+                    record_failure(stage, str(exc))
         if config["mesh"]["enabled"]:
             from research_pipeline.mesh_analyzer import analyze_mesh, is_oom_failure
             from research_pipeline.resource_guard import wait_until_ready
@@ -201,18 +272,6 @@ def execute_scene(config: dict, scene: Scene, output: Path,
             result["mesh_extraction"] = {**mesh_config, **analyze_mesh(
                 output / "recon_post.ply", mesh_process_metrics, scene.name
             )}
-        # Visual 2D Metrics (PSNR, SSIM, LPIPS) - diproses setelah mesh extraction
-        stage = "image_metrics"
-        process = executor(result["commands"][stage], output / "research/logs/image_metrics.log",
-                           config["resource_monitor"]["interval_seconds"])
-        if process.returncode:
-            raise StageFailure(stage, f"Image evaluation exited with code {process.returncode}")
-        image_metrics = read_json(output / "research/image_metrics.json")
-        if image_metrics.get("image_count", 0) <= 0:
-            raise StageFailure(stage, "Image evaluation produced no image metrics")
-        result["rendering"].update({k: image_metrics.get(k) for k in ("ssim", "psnr", "lpips", "split", "method")})
-        result["rendering"]["evaluation_image_count"] = image_metrics["image_count"]
-        result["warnings"].extend(image_metrics.get("warnings", []))
         if config["geometry_evaluation"]["enabled"]:
             from research_pipeline.utils import read_json
 
@@ -235,14 +294,16 @@ def execute_scene(config: dict, scene: Scene, output: Path,
                 **read_json(output / "research/geometry_metrics.json"),
             }
             result["warnings"].extend(result["geometry"].get("warnings", []))
-        result["status"] = "success"
+        if result["failed_stage"] is None:
+            result["status"] = "success"
     except StageFailure as exc:
-        result.update(failed_stage=exc.stage, error_message=str(exc))
+        record_failure(exc.stage, str(exc))
     except (ImportError, OSError, ValueError, RuntimeError) as exc:
-        result.update(failed_stage=stage, error_message=str(exc))
+        record_failure(stage, str(exc))
     return result
 
-def run_batch(config: dict, scenes: list[Scene], resume: bool = False, force: bool = False) -> int:
+def run_batch(config: dict, scenes: list[Scene], resume: bool = False,
+              force: bool = False, start_from: str = "training") -> int:
     from research_pipeline.results import (
         ensure_master_csv, experiment_id, reproducibility, successful_ids,
         timestamp, upsert_result, write_summary,
@@ -263,7 +324,10 @@ def run_batch(config: dict, scenes: list[Scene], resume: bool = False, force: bo
             logging.info("SKIPPED: matching successful experiment %s", identity)
             continue
         output = allocate_output(resolve_path(config["output"]["root"]), scene.name)
-        result = execute_scene(config, scene, output)
+        if start_from == "training":
+            result = execute_scene(config, scene, output)
+        else:
+            result = execute_scene(config, scene, output, start_from=start_from)
         result["experiment_id"] = identity
         result["timestamp"] = timestamp()
         result["reproducibility"] = environment

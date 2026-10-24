@@ -12,13 +12,15 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULTS = {
     "project": {"name": "radegs_togog_bali", "dataset": "Dataset Togog Bali"},
     "dataset": {"root": "/home/pande/dataset_togog_bali"},
-    "output": {"root": "/home/pande/radegs_results/togog_bali"},
+    "output": {"root": "output/togog_bali"},
     "results": {"csv": "research_results/experiment_results.csv"},
+    "colmap": {"executable": "colmap", "camera_model": "OPENCV", "use_gpu": True},
     "training": {"extra_args": []},
     "rendering": {"enabled": True, "extra_args": []},
+    "image_metrics": {"enabled": True},
     "mesh": {"enabled": True, "resolution": 2, "num_cluster": 8,
              "depth_ratio": 0.5, "extra_args": []},
-    "resource_monitor": {"interval_seconds": 1.0},
+    "resource_monitor": {"interval_seconds": 5.0},
     "resource_guard": {"enabled": True, "cooldown_before_mesh_seconds": 5,
                        "minimum_free_ram_gb": 4, "minimum_free_vram_mb": 1024,
                        "wait_if_memory_low": True, "check_interval_seconds": 10,
@@ -77,6 +79,10 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
     for key in ("name", "dataset"):
         if not isinstance(config["project"][key], str):
             raise ValueError(f"project.{key} must be text")
+    for key in ("executable", "camera_model"):
+        value = config["colmap"][key]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"colmap.{key} must be nonempty text")
     for section, key in (("resource_monitor", "interval_seconds"), ("resource_guard", "check_interval_seconds"),
                          ("geometry_evaluation", "sample_points")):
         if config[section][key] <= 0:

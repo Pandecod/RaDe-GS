@@ -10,7 +10,9 @@ from unittest.mock import patch
 import yaml
 from research_pipeline.config import DEFAULTS, validate
 from research_pipeline.commands import commands
-from research_pipeline.scene_discovery import discover, validation_errors
+from research_pipeline.scene_discovery import (
+    discover, start_validation_errors, validation_errors,
+)
 from research_pipeline.run_all import main
 
 def make_scene(root: Path, name: str, suffix: str = ".bin") -> Path:
@@ -19,6 +21,12 @@ def make_scene(root: Path, name: str, suffix: str = ".bin") -> Path:
     (scene / "sparse/0").mkdir(parents=True)
     for stem in ("cameras", "images", "points3D"):
         (scene / "sparse/0" / (stem + suffix)).write_bytes(b"fixture")
+    return scene
+
+def make_raw_scene(root: Path, name: str) -> Path:
+    scene = root / name
+    (scene / "input").mkdir(parents=True)
+    (scene / "input/00001.jpg").write_bytes(b"fixture")
     return scene
 
 class Phase1(unittest.TestCase):
@@ -55,14 +63,58 @@ class Phase1(unittest.TestCase):
             ("training", "extra_args", ["--model_path=elsewhere"]),
             ("training", "extra_args", ["--nonexistent"]),
             ("resource_monitor", "interval_seconds", 0),
-            ("resource_guard", "enabled", "false")]:
+            ("resource_guard", "enabled", "false"),
+            ("colmap", "executable", ""),
+            ("colmap", "use_gpu", "true")]:
             config = copy.deepcopy(DEFAULTS)
             config[section][key] = value
             with self.assertRaises(ValueError):
                 validate(config)
+
+    def test_colmap_start_accepts_raw_input_and_dry_run_shows_both_stages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "data"
+            raw = make_raw_scene(data, "togog")
+            scene = discover(data)[0]
+            self.assertTrue(start_validation_errors(scene, "training"))
+            self.assertFalse(start_validation_errors(scene, "colmap"))
+
+            config = copy.deepcopy(DEFAULTS)
+            config["dataset"]["root"] = str(data)
+            config["output"]["root"] = str(root / "output")
+            config["results"]["csv"] = str(root / "results.csv")
+            built = commands(config, raw, root / "output/togog", "colmap")
+            self.assertEqual(list(built)[:2], ["colmap", "training"])
+            self.assertIn("research_pipeline.colmap_preprocessor", built["colmap"])
+
+            cfg = root / "config.yaml"
+            cfg.write_text(yaml.safe_dump(config), encoding="utf-8")
+            with patch("subprocess.Popen", side_effect=AssertionError("No processes allowed")), \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(main(["--config", str(cfg), "--start-from", "colmap",
+                                       "--dry-run"]), 0)
+            printed = out.getvalue()
+            self.assertIn("COLMAP:", printed)
+            self.assertIn("TRAIN:", printed)
     def test_mutually_exclusive_flags(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             main(["--config", "missing", "--resume", "--force"])
+
+    def test_keyboard_interrupt_returns_clean_shell_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "data"
+            make_scene(data, "togog")
+            config = copy.deepcopy(DEFAULTS)
+            config["dataset"]["root"] = str(data)
+            config["output"]["root"] = str(root / "output")
+            config["results"]["csv"] = str(root / "results.csv")
+            cfg = root / "config.yaml"
+            cfg.write_text(yaml.safe_dump(config), encoding="utf-8")
+            with patch("research_pipeline.runner.run_batch", side_effect=KeyboardInterrupt), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(["--config", str(cfg)]), 130)
 
 if __name__ == "__main__":
     unittest.main()

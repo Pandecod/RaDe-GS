@@ -2,6 +2,7 @@ import copy
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 from research_pipeline.config import DEFAULTS
@@ -10,6 +11,36 @@ from research_pipeline.scene_discovery import Scene
 from test_research_pipeline import make_scene
 
 class Phase2(unittest.TestCase):
+    def test_carriage_return_progress_is_forwarded_before_process_exit(self):
+        class Sink:
+            def __init__(self):
+                self.buffer = self
+                self.seen = threading.Event()
+            def write(self, value):
+                if b"live-progress" in value:
+                    self.seen.set()
+            def flush(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sink = Sink()
+            error = []
+            def target():
+                try:
+                    run_process([sys.executable, "-c",
+                        "import os,time; os.write(2,b'live-progress\\r'); time.sleep(2)"],
+                        Path(tmp) / "progress.log", 0.05)
+                except BaseException as exc:
+                    error.append(exc)
+            with patch("research_pipeline.runner.sys.stderr", sink):
+                thread = threading.Thread(target=target)
+                thread.start()
+                seen_before_exit = sink.seen.wait(3) and thread.is_alive()
+                thread.join(5)
+            self.assertTrue(seen_before_exit)
+            self.assertFalse(thread.is_alive())
+            self.assertFalse(error)
+
     def test_raw_stdout_stderr_and_nonzero_exit(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "training.log"

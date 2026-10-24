@@ -6,11 +6,19 @@ import types
 import unittest
 
 from research_pipeline.config import DEFAULTS
-from research_pipeline.mesh_analyzer import analyze_mesh, is_oom_failure
+from research_pipeline.mesh_analyzer import (
+    analyze_mesh, cluster_triangle_threshold, is_oom_failure,
+)
 from research_pipeline.resource_guard import wait_until_ready
 
 
 class Phase5(unittest.TestCase):
+    def test_cluster_threshold_handles_fewer_clusters_than_requested(self):
+        self.assertEqual(cluster_triangle_threshold([120], 8), 120)
+        self.assertEqual(cluster_triangle_threshold([10, 20], 8), 50)
+        with self.assertRaises(ValueError):
+            cluster_triangle_threshold([], 8)
+
     def test_resource_guard_waits_then_passes(self):
         config = copy.deepcopy(DEFAULTS)
         config["resource_guard"]["cooldown_before_mesh_seconds"] = 0

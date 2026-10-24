@@ -10,6 +10,7 @@ from arguments import ModelParams, PipelineParams, get_combined_args
 from gaussian_renderer import render
 from scene import GaussianModel, Scene
 from utils.general_utils import safe_state
+from research_pipeline.mesh_analyzer import cluster_triangle_threshold
 
 
 def post_process_mesh(mesh, cluster_to_keep=1):
@@ -18,7 +19,7 @@ def post_process_mesh(mesh, cluster_to_keep=1):
     """
     import copy
 
-    print("post processing the mesh to have {} clusterscluster_to_kep".format(cluster_to_keep))
+    print("Post-processing mesh; keeping up to {} clusters".format(cluster_to_keep))
     mesh_0 = copy.deepcopy(mesh)
     with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Debug) as cm:
         triangle_clusters, cluster_n_triangles, cluster_area = mesh_0.cluster_connected_triangles()
@@ -26,8 +27,7 @@ def post_process_mesh(mesh, cluster_to_keep=1):
     triangle_clusters = np.asarray(triangle_clusters)
     cluster_n_triangles = np.asarray(cluster_n_triangles)
     cluster_area = np.asarray(cluster_area)
-    n_cluster = np.sort(cluster_n_triangles.copy())[-cluster_to_keep]
-    n_cluster = max(n_cluster, 50)  # filter meshes smaller than 50
+    n_cluster = cluster_triangle_threshold(cluster_n_triangles, cluster_to_keep)
     triangles_to_remove = cluster_n_triangles[triangle_clusters] < n_cluster
     mesh_0.remove_triangles_by_mask(triangles_to_remove)
     mesh_0.remove_unreferenced_vertices()
@@ -47,31 +47,6 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     viewpoint_cam_list = scene.getTrainCameras()
 
-    depth_list = []
-    color_list = []
-    
-    print("\n[PELACAK] Mulai mengekstrak render dari kamera...")
-    for id, viewpoint_cam in enumerate(viewpoint_cam_list):
-        print(f"[PELACAK] Memanggil modul CUDA render untuk kamera ke-{id}...")
-        
-        # Titik Kritis 1: Memanggil kernel CUDA
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size)
-        
-        print(f"[PELACAK] Render kamera ke-{id} sukses. Memproses tensor...")
-        
-        # Titik Kritis 2: Memproses data di CPU/RAM
-        rendered_img = torch.clamp(render_pkg["render"], min=0, max=1.0).cpu().numpy().transpose(1, 2, 0)
-        color_list.append(np.ascontiguousarray(rendered_img))
-        depth = render_pkg[depth_name].clone()
-        if viewpoint_cam.gt_mask is not None:
-            depth[viewpoint_cam.gt_mask < 0.5] = 0
-        depth_list.append(depth[0].cpu().numpy())
-        
-        print(f"[PELACAK] Kamera ke-{id} selesai diproses seluruhnya.\n")
-
-    print("\n[PELACAK] Fase 1 Selesai. Membebaskan cache CUDA...")
-    torch.cuda.empty_cache()
-    
     # [RESOLUSI AMAN] Mengunci detail di 6 milimeter
     voxel_size = 0.009
     o3d_device = o3d.core.Device("CPU:0")
@@ -88,19 +63,29 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     )
     print("[PELACAK] VoxelBlockGrid berhasil dibuat!")
 
-    print("\n[PELACAK] Fase 3: Mulai proses fusi TSDF (Integrasi Open3D)...")
-    for id, (color, depth, viewpoint_cam) in enumerate(zip(color_list, depth_list, viewpoint_cam_list)):
-        print(f"[PELACAK] Mengintegrasikan depth map dari kamera ke-{id}...")
-        depth = o3d.t.geometry.Image(depth)
-        depth = depth.to(o3d_device)
-        color = o3d.t.geometry.Image(color)
-        color = color.to(o3d_device)
+    print("\n[PELACAK] Merender dan mengintegrasikan setiap kamera satu per satu...")
+    total_cameras = len(viewpoint_cam_list)
+    for camera_id, viewpoint_cam in enumerate(viewpoint_cam_list, 1):
+        print(f"[PELACAK] Kamera {camera_id}/{total_cameras}: render dan integrasi TSDF...", flush=True)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background, kernel_size)
+        color_array = np.ascontiguousarray(
+            torch.clamp(render_pkg["render"], min=0, max=1.0)
+            .cpu().numpy().transpose(1, 2, 0)
+        )
+        depth_tensor = render_pkg[depth_name]
+        if viewpoint_cam.gt_mask is not None:
+            depth_tensor = depth_tensor.clone()
+            depth_tensor[viewpoint_cam.gt_mask < 0.5] = 0
+        depth_array = np.ascontiguousarray(depth_tensor[0].cpu().numpy())
+        depth = o3d.t.geometry.Image(depth_array).to(o3d_device)
+        color = o3d.t.geometry.Image(color_array).to(o3d_device)
         intrinsic = np.array([[viewpoint_cam.Fx, 0, viewpoint_cam.Cx], [0, viewpoint_cam.Fy, viewpoint_cam.Cy], [0, 0, 1]], dtype=np.float64)
         intrinsic = o3d.core.Tensor(intrinsic)
         extrinsic = o3d.core.Tensor((viewpoint_cam.world_view_transform.T).cpu().numpy().astype(np.float64))
         
         frustum_block_coords = vbg.compute_unique_block_coordinates(depth, intrinsic, extrinsic, 1.0, 8.0)
         vbg.integrate(frustum_block_coords, depth, color, intrinsic, extrinsic, 1.0, 8.0)
+        del render_pkg, color_array, depth_tensor, depth_array, depth, color
 
     # --- DI SINI LETAK PERUBAHAN EDIT KODE BARU KITA ---
     print("\n[PELACAK] Fase 3 Selesai! Mulai mengekstrak Solid Mesh...")
