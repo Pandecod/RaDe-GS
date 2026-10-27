@@ -96,10 +96,10 @@ class PipelineFlow(unittest.TestCase):
                         folder = output / "train/ours_30000" / kind
                         folder.mkdir(parents=True, exist_ok=True)
                         (folder / "00000.png").write_bytes(b"fixture")
-                elif command[1] == "mesh_extract.py":
+                elif command[1] == "mesh_extract_tnt.py":
                     stage = "mesh_extraction"
-                    self.assertEqual(command[-6:], ["-r", "2", "--num_cluster", "8",
-                                                    "--depth_ratio", "0.5"])
+                    self.assertEqual(command[-10:], ["-r", "2", "--num_cluster", "8",
+                                                    "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])
                     (output / "recon_post.ply").write_bytes(b"fixture")
                 elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
                     stage = "image_metrics"
@@ -124,6 +124,9 @@ class PipelineFlow(unittest.TestCase):
             self.assertEqual(result["training"]["final_iteration"], 30000)
             self.assertEqual(result["rendering"]["image_count"], 1)
             self.assertEqual(result["mesh_extraction"]["depth_ratio"], 0.5)
+            self.assertEqual(result["mesh_extraction"]["script"], "mesh_extract_tnt.py")
+            self.assertEqual(result["mesh_extraction"]["voxel_size"], 0.009)
+            self.assertEqual(result["mesh_extraction"]["max_depth"], 8.0)
 
     def test_mesh_oom_is_not_retried_or_adjusted(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -159,8 +162,8 @@ class PipelineFlow(unittest.TestCase):
             result = execute_scene(config, scene, output, fixture)
             self.assertEqual(result["failed_stage"], "mesh_extraction_oom")
             self.assertEqual(len(commands_seen), 4)
-            self.assertEqual(commands_seen[3][-6:], ["-r", "2", "--num_cluster", "8",
-                                                     "--depth_ratio", "0.5"])
+            self.assertEqual(commands_seen[3][-10:], ["-r", "2", "--num_cluster", "8",
+                                                     "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])
 
     def test_optional_geometry_runs_after_mesh(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -186,7 +189,7 @@ class PipelineFlow(unittest.TestCase):
                         folder = output / "train/ours_30000" / kind
                         folder.mkdir(parents=True, exist_ok=True)
                         (folder / "00000.png").write_bytes(b"fixture")
-                elif command[1] == "mesh_extract.py":
+                elif command[1] == "mesh_extract_tnt.py":
                     stages.append("mesh_extraction")
                     (output / "recon_post.ply").write_bytes(b"fixture")
                 elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:

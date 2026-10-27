@@ -16,6 +16,15 @@ import sys
 from typing import Sequence, TypedDict
 import uuid
 
+# Configure the opt-in allocator before torch or CUDA extensions are imported.
+if __name__ == "__main__":
+    _allocator_parser = ArgumentParser(add_help=False)
+    _allocator_parser.add_argument("--enable_allocator_gc", action="store_true")
+    _allocator_options, _ = _allocator_parser.parse_known_args(sys.argv[1:])
+    if _allocator_options.enable_allocator_gc:
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+            "backend:native,garbage_collection_threshold:0.8")
+
 import torch
 from tqdm import tqdm
 
@@ -432,6 +441,9 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[15000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     # Diagnostic options only; optimization/model defaults remain unchanged.
+    parser.add_argument(
+        "--enable_allocator_gc", action="store_true", default=False,
+        help="Opt in to native allocator GC at 0.8 with an explicit memory fraction of 1.0.")
     parser.add_argument("--profile_training", action="store_true", default=False)
     parser.add_argument("--profile_interval", type=int, default=100)
     parser.add_argument("--profile_from", type=int, default=1)
@@ -441,6 +453,13 @@ if __name__ == "__main__":
     parser.add_argument("--profile_gpu_interval", type=float, default=1.0)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
+
+    if args.enable_allocator_gc:
+        torch.cuda.set_per_process_memory_fraction(1.0)
+        args.allocator_memory_fraction = torch.cuda.get_per_process_memory_fraction()
+        print("[ALLOCATOR] Explicit memory fraction="
+              f"{args.allocator_memory_fraction}; native GC threshold=0.8")
+
 
     print("Optimizing " + args.model_path)
 

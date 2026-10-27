@@ -4,6 +4,9 @@ Panduan ini berisi langkah operasional Research Pipeline. Kondisi implementasi,
 hasil tes, dan batasan teknis tersedia di
 [Laporan Kondisi RaDe-GS](LAPORAN_KONDISI_RADEGS.md).
 
+Untuk command langsung tanpa pipeline, lihat
+[Perintah manual training dan ekstraksi mesh](#13-perintah-manual-training-dan-ekstraksi-mesh-togog-tualen).
+
 ## Mulai dari sini: checklist sebelum training
 
 Tentukan dulu titik awal pipeline:
@@ -144,6 +147,8 @@ mesh:
   resolution: 2
   num_cluster: 8
   depth_ratio: 0.5
+  voxel_size: 0.009
+  max_depth: 8.0
   extra_args: []
 ```
 
@@ -310,6 +315,8 @@ mesh:
   resolution: 2
   num_cluster: 8
   depth_ratio: 0.5
+  voxel_size: 0.009
+  max_depth: 8.0
   extra_args: []
 ```
 
@@ -336,7 +343,7 @@ output/togog_bali/<scene>/
   point_cloud/iteration_<N>/point_cloud.ply
   train/ours_<N>/renders/
   train/ours_<N>/gt/
-  recon_raw.ply
+  recon.ply
   recon_post.ply
   research/
     logs/
@@ -351,7 +358,7 @@ output/togog_bali/<scene>/
 | Hasil | Arti |
 |---|---|
 | `point_cloud/iteration_<N>/point_cloud.ply` | Model Gaussian pada iterasi tersimpan |
-| `recon_raw.ply` | Mesh mentah |
+| `recon.ply` | Mesh mentah |
 | `recon_post.ply` | Mesh final setelah post-processing |
 | `research/logs/*.log` | Output mentah setiap tahap |
 | `training_metrics.csv` | Metrik yang diparse dari training |
@@ -426,3 +433,159 @@ python -B -m unittest discover -s tests -v
 
 Tes ini memeriksa controller dan utilitas dengan fixture CPU. Tes tidak
 menjalankan training RaDe-GS atau membuktikan kualitas hasil GPU.
+
+## Pembaruan 27 Oktober 2026
+
+Konfigurasi configs/togog_bali.yaml sekarang mengaktifkan allocator GC,
+30.000 iterasi, resolusi training 1024, dan profiling. Pipeline memakai
+mesh_extract_tnt.py dengan Open3D 0.19.0, voxel_size 0.009, dan max_depth 8.0.
+Contoh training.extra_args kosong di atas adalah bentuk konfigurasi generik;
+untuk pengaturan yang berhasil gunakan YAML Togog Bali yang disertakan.
+Lihat [petunjuk penyalinan dan dry-run](docs/PIPELINE_GC_TNT.md).
+
+
+## 13. Perintah manual training dan ekstraksi mesh Togog Tualen
+
+Bagian ini memakai pengaturan yang berhasil pada server. Jalankan perintah
+di terminal Ubuntu/WSL server. Perintah manual tidak membaca YAML pipeline:
+flag GC, resolusi, dan parameter mesh perlu dituliskan pada command.
+
+### A. Persiapan
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -c "import torch, open3d; print('PyTorch:', torch.__version__); print('Open3D:', open3d.__version__)"
+python -m pip check
+~~~
+
+Environment percobaan berhasil memakai PyTorch 2.6.0+cu124 dan Open3D 0.19.0.
+Jika versi tersebut sudah terpasang dan pemeriksaan dependensi berhasil,
+tidak perlu memasang ulang paket. train.py harus memiliki --enable_allocator_gc,
+dan mesh_extract_tnt.py harus tersedia di root proyek.
+
+### B. Training baru dengan allocator GC
+
+Gunakan langkah ini hanya untuk membuat model baru. Jika model iterasi 30000
+sudah tersedia dan hanya ingin mengekstrak mesh, langsung ke bagian D.
+
+Buat folder output unik agar hasil training sebelumnya tetap tersimpan:
+
+~~~bash
+mkdir -p /home/pande/projects/RaDe-GS/output/togog_bali
+run_output=$(mktemp -d /home/pande/projects/RaDe-GS/output/togog_bali/togog_tualen_manual_XXXXXXXX)
+printf 'Folder hasil: %s\n' "$run_output"
+~~~
+
+Lalu jalankan pada terminal yang sama:
+
+~~~bash
+python train.py \
+  -s /home/pande/projects/RaDe-GS/dataset/togog_bali/togog_tualen \
+  -m "$run_output" \
+  --enable_allocator_gc \
+  --iterations 30000 \
+  --resolution 1024 \
+  --profile_training \
+  --profile_from 1800 \
+  --profile_until 30000 \
+  --profile_interval 100 \
+  --profile_control_samples \
+  --profile_gpu_interval 1 \
+  --checkpoint_iterations 3000 7000 15000 25000
+~~~
+
+--enable_allocator_gc mengaktifkan allocator native dengan threshold 0.8
+dan memory fraction eksplisit 1.0. Flag inilah yang harus disertakan saat
+training manual; menjalankan train.py tanpa flag tersebut tidak mengaktifkannya.
+Parameter dan profiling di atas mengikuti configs/togog_bali.yaml.
+
+Tunggu sampai Training complete dan pastikan model tersedia:
+
+~~~bash
+ls -lh "$run_output/point_cloud/iteration_30000/point_cloud.ply"
+~~~
+
+### C. Ekstraksi mesh dari training baru
+
+Setelah training berhasil, jalankan pada terminal yang sama sehingga run_output
+masih menunjuk folder yang baru dibuat:
+
+~~~bash
+python mesh_extract_tnt.py \
+  -m "$run_output" \
+  --iteration 30000 \
+  -r 2 \
+  --num_cluster 8 \
+  --depth_ratio 0.5 \
+  --voxel_size 0.009 \
+  --max_depth 8.0
+~~~
+
+Perubahan dari command lama untuk Togog Tualen:
+
+- Gunakan mesh_extract_tnt.py (ScalableTSDFVolume).
+- Ejaan opsi yang benar adalah --depth_ratio, bukan --depth_ration.
+- Pertahankan --num_cluster 8 dan --depth_ratio 0.5.
+- Sertakan --voxel_size 0.009 dan --max_depth 8.0.
+- Gunakan Open3D 0.19.0, versi yang telah berhasil diuji.
+
+Parameter tersebut tidak memilih atau memotong hanya patung utama.
+Jika transforms.json memiliki aabb_range, skrip dapat menghitung ulang ukuran
+voxel dari AABB; periksa nilai TSDF voxel_size pada log.
+
+### D. Ekstraksi saja dari model lama yang sudah selesai
+
+Tidak perlu training ulang. Untuk model berhasil yang sudah ada di server,
+jalankan perintah berikut. Skrip menulis recon.ply dan recon_post.ply di folder
+model; menjalankan ulang akan mengganti kedua hasil mesh jika sudah ada.
+
+~~~bash
+python mesh_extract_tnt.py \
+  -m /home/pande/projects/RaDe-GS/output/togog_bali/full_gc/togog_tualen \
+  --iteration 30000 \
+  -r 2 \
+  --num_cluster 8 \
+  --depth_ratio 0.5 \
+  --voxel_size 0.009 \
+  --max_depth 8.0
+~~~
+
+Periksa hasil model lama tersebut:
+
+~~~bash
+ls -lh \
+  /home/pande/projects/RaDe-GS/output/togog_bali/full_gc/togog_tualen/recon.ply \
+  /home/pande/projects/RaDe-GS/output/togog_bali/full_gc/togog_tualen/recon_post.ply
+~~~
+
+Untuk hasil training baru pada bagian B, periksa dengan:
+
+~~~bash
+ls -lh "$run_output/recon.ply" "$run_output/recon_post.ply"
+~~~
+
+recon.ply adalah mesh mentah; recon_post.ply adalah hasil post-processing.
+Pemeriksaan keberadaan file bukan evaluasi kualitas terhadap GT.
+
+### E. Perbedaan manual dan pipeline
+
+Dua command manual di atas menjalankan training dan ekstraksi secara terpisah.
+Rendering gambar, evaluasi citra, resource guard, dan rekap hasil pipeline
+tidak otomatis dijalankan oleh kedua command tersebut.
+
+Jika ingin urutan lengkap otomatis, periksa dry-run dahulu:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --scene togog_tualen \
+  --start-from training \
+  --dry-run
+~~~
+
+Untuk memulai run baru melalui pipeline, gunakan command yang sama tanpa
+--dry-run. Ini memulai training baru; untuk model yang sudah selesai gunakan
+bagian D. Panduan penyalinan kode ke server tersedia di
+[Pipeline GC + TNT](docs/PIPELINE_GC_TNT.md).

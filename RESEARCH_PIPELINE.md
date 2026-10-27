@@ -88,10 +88,15 @@ this checkout's `metric.py` behavior for the default non-`--eval` configuration.
 Mesh extraction always uses the verified experiment command:
 
 ```bash
-python mesh_extract.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5
+python mesh_extract_tnt.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 8.0
 ```
 
-Configuration validation rejects attempts to override these parameters. An OOM
+The Togog Bali YAML files enable allocator GC, 30,000 training iterations and
+1024-pixel training width. Open3D is pinned to 0.19.0 in requirements.txt.
+Mesh uses the latest saved iteration by default. mesh.voxel_size and
+mesh.max_depth must be positive; duplicate overrides in extra_args are rejected.
+Configuration validation fixes resolution, num_cluster and depth_ratio as above.
+See [deployment instructions](docs/PIPELINE_GC_TNT.md). An OOM
 is recorded as `mesh_extraction_oom`; the pipeline does not retry with different
 mesh parameters.
 

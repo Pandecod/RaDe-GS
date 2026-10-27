@@ -29,3 +29,12 @@ Thumbs.db
 
 # Checkpoint files (besar, opsional)
 # *.pth
+
+# Arsip kode percobaan dan salinan sebelum perubahan (lokal saja)
+/arsip_lokal/
+/.profiling_backup/
+
+# Hasil investigasi dan salinan data lokal; jangan ikut git add
+/analisa radegs/
+/analisaradegs/
+/folder new/

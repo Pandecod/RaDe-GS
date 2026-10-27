@@ -47,8 +47,8 @@ class Phase1(unittest.TestCase):
             self.assertEqual([s.name for s in scenes], ["togog_arjuna", "togog_ganesha"])
             self.assertFalse(validation_errors(scenes[0]))
             cmd = commands(config, scenes[0].path, root / "outputs")["mesh_extraction"]
-            self.assertEqual(cmd[1:], ["mesh_extract.py", "-m", str(root / "outputs"),
-                "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5"])
+            self.assertEqual(cmd[1:], ["mesh_extract_tnt.py", "-m", str(root / "outputs"),
+                "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])
             for mode in ("--list-scenes", "--dry-run"):
                 with patch("subprocess.Popen", side_effect=AssertionError("No processes allowed")), contextlib.redirect_stdout(io.StringIO()) as out:
                     self.assertEqual(main(["--config", str(cfg), mode]), 0)
@@ -59,6 +59,9 @@ class Phase1(unittest.TestCase):
             self.assertTrue(validation_errors(discover(data, "invalid")[0]))
     def test_config_rejects_overrides_and_bad_values(self):
         for section, key, value in [
+            ("mesh", "voxel_size", 0), ("mesh", "max_depth", float("nan")),
+            ("mesh", "extra_args", ["--voxel_size=0.1"]),
+            ("mesh", "extra_args", ["--max_depth", "20"]),
             ("mesh", "depth_ratio", 0.6), ("mesh", "extra_args", ["-r4"]),
             ("training", "extra_args", ["--model_path=elsewhere"]),
             ("training", "extra_args", ["--nonexistent"]),
@@ -97,6 +100,43 @@ class Phase1(unittest.TestCase):
             printed = out.getvalue()
             self.assertIn("COLMAP:", printed)
             self.assertIn("TRAIN:", printed)
+
+    def test_shipped_gc_configs_dry_run_with_tnt_without_model_imports(self):
+        from research_pipeline.config import REPO, load_config, repository_parser
+        for name in ("togog_bali.yaml", "togog_bali_full_gc.yaml"):
+            with self.subTest(config=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config = load_config(REPO / "configs" / name)
+                scene = make_scene(root / "dataset", "togog_tualen")
+                config["dataset"]["root"] = str(scene.parent)
+                config["output"]["root"] = str(root / "output")
+                config["results"]["csv"] = str(root / "results.csv")
+                built = commands(config, scene, root / "output/togog_tualen")
+                train = repository_parser("training").parse_args(built["training"][2:])
+                self.assertTrue(train.enable_allocator_gc)
+                self.assertEqual((train.iterations, train.resolution), (30000, 1024))
+                mesh = repository_parser("mesh").parse_args(built["mesh_extraction"][2:])
+                self.assertEqual(built["mesh_extraction"][1], "mesh_extract_tnt.py")
+                self.assertEqual((mesh.resolution, mesh.num_cluster, mesh.depth_ratio,
+                                  mesh.voxel_size, mesh.max_depth), (2, 8, 0.5, 0.009, 8.0))
+                # Default -1 selects the latest saved model, including short custom runs.
+                self.assertEqual(mesh.iteration, -1)
+                cfg = root / "config.yaml"
+                cfg.write_text(yaml.safe_dump(config), encoding="utf-8")
+                before = sorted(str(p) for p in root.rglob("*"))
+                with patch("subprocess.Popen", side_effect=AssertionError("No processes allowed")), \
+                        contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(main(["--config", str(cfg), "--scene", "togog_tualen",
+                                           "--start-from", "training", "--dry-run"]), 0)
+                printed = out.getvalue()
+                self.assertIn("--enable_allocator_gc", printed)
+                self.assertIn("mesh_extract_tnt.py", printed)
+                self.assertNotIn("python mesh_extract.py", printed)
+                self.assertIn("--voxel_size 0.009 --max_depth 8.0", printed)
+                self.assertEqual(before, sorted(str(p) for p in root.rglob("*")))
+                self.assertNotIn("torch", sys.modules)
+                self.assertNotIn("open3d", sys.modules)
+
     def test_mutually_exclusive_flags(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             main(["--config", "missing", "--resume", "--force"])

@@ -19,7 +19,7 @@ DEFAULTS = {
     "rendering": {"enabled": True, "extra_args": []},
     "image_metrics": {"enabled": True},
     "mesh": {"enabled": True, "resolution": 2, "num_cluster": 8,
-             "depth_ratio": 0.5, "extra_args": []},
+             "depth_ratio": 0.5, "voxel_size": 0.009, "max_depth": 8.0, "extra_args": []},
     "resource_monitor": {"interval_seconds": 5.0},
     "resource_guard": {"enabled": True, "cooldown_before_mesh_seconds": 5,
                        "minimum_free_ram_gb": 4, "minimum_free_vram_mb": 1024,
@@ -40,7 +40,7 @@ def repository_parser(stage: str) -> argparse.ArgumentParser:
     module.PipelineParams(parser)
     if stage == "training":
         module.OptimizationParams(parser)
-    script = {"training": "train.py", "rendering": "render.py", "mesh": "mesh_extract.py"}[stage]
+    script = {"training": "train.py", "rendering": "render.py", "mesh": "mesh_extract_tnt.py"}[stage]
     tree = ast.parse((REPO / script).read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -84,7 +84,8 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"colmap.{key} must be nonempty text")
     for section, key in (("resource_monitor", "interval_seconds"), ("resource_guard", "check_interval_seconds"),
-                         ("geometry_evaluation", "sample_points")):
+                         ("geometry_evaluation", "sample_points"), ("mesh", "voxel_size"),
+                         ("mesh", "max_depth")):
         if config[section][key] <= 0:
             raise ValueError(f"{section}.{key} must be positive")
     geometry = config["geometry_evaluation"]
@@ -117,7 +118,7 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
         for action in parser._actions:
             forbidden = {"source_path", "model_path"}
             if stage == "mesh":
-                forbidden |= {"resolution", "num_cluster", "depth_ratio"}
+                forbidden |= {"resolution", "num_cluster", "depth_ratio", "voxel_size", "max_depth"}
             if action.dest in forbidden:
                 for token in extras:
                     if any(token == opt or token.startswith(opt + "=")

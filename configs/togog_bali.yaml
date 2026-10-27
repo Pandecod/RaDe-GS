@@ -12,7 +12,27 @@ colmap:
   camera_model: OPENCV
   use_gpu: true
 training:
-  extra_args: []
+  extra_args:
+    - "--enable_allocator_gc"
+    - "--iterations"
+    - "30000"
+    - "--resolution"
+    - "1024"
+    - "--profile_training"
+    - "--profile_from"
+    - "1800"
+    - "--profile_until"
+    - "30000"
+    - "--profile_interval"
+    - "100"
+    - "--profile_control_samples"
+    - "--profile_gpu_interval"
+    - "1"
+    - "--checkpoint_iterations"
+    - "3000"
+    - "7000"
+    - "15000"
+    - "25000"
 rendering:
   enabled: true
   extra_args: []
@@ -23,6 +43,8 @@ mesh:
   resolution: 2
   num_cluster: 8
   depth_ratio: 0.5
+  voxel_size: 0.009
+  max_depth: 8.0
   extra_args: []
 resource_monitor:
   interval_seconds: 5.0
