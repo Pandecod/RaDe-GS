@@ -173,6 +173,96 @@ Fungsi pengaturan penting:
 Parameter mesh `resolution`, `num_cluster`, dan `depth_ratio` dikunci pada
 `2`, `8`, dan `0.5` oleh validasi konfigurasi.
 
+### 3.1 Memilih resolusi training 1024 atau 1600
+
+Pilih salah satu file YAML sebelum menjalankan pipeline:
+
+| Pilihan | File konfigurasi | Output untuk togog_tualen | CSV rekap |
+|---|---|---|---|
+| 1024 | configs/togog_bali.yaml | output/togog_bali/togog_tualen | research_results/experiment_results.csv |
+| 1600 | configs/togog_bali_1600.yaml | output/togog_bali/resolusi_1600/togog_tualen | research_results/experiment_results_1600.csv |
+
+Kedua konfigurasi mengaktifkan allocator GC, memakai 30.000 iterasi, profiling,
+dan parameter mesh TNT yang sama. Pilihan 1024 sudah pernah berhasil; 1600
+masih perlu diuji di server. File YAML 1600 dibuat terpisah supaya pengaturan
+dan output 1024 tetap tersimpan. Salin configs/togog_bali_1600.yaml dari
+komputer lokal ke folder configs/ pada server sebelum menggunakannya.
+
+Untuk foto Tualen berukuran 3862 ? 2150 piksel, --resolution 1024 menghasilkan
+sekitar 1024 ? 570, sedangkan --resolution 1600 menghasilkan 1600 ? 890 piksel
+dengan perhitungan dan pembulatan pada kode ini. Ukuran bergantung pada foto
+input yang benar-benar dimuat. Pemilihan ini mengatur lebar gambar untuk
+training; pengaturan mesh -r 2 tetap terpisah dan memakai setengah dimensi
+gambar input.
+
+#### Menyiapkan terminal server
+
+Jalankan sekali di terminal Ubuntu/WSL server:
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+~~~
+
+Pastikan versi pipeline dan kedua file konfigurasi sudah disalin ke server.
+Pilih salah satu resolusi di bawah. --start-from training memakai hasil COLMAP
+yang sudah tersedia; command run memulai training baru sebanyak 30.000 iterasi,
+lalu menjalankan rendering, metrik gambar dan ekstraksi mesh yang aktif.
+
+#### Pilihan A: 1024 ? konfigurasi yang pernah berhasil
+
+Pemeriksaan tanpa menjalankan training:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --scene togog_tualen \
+  --start-from training \
+  --dry-run
+~~~
+
+Pastikan baris TRAIN menampilkan --resolution 1024 dan --enable_allocator_gc.
+Untuk menjalankan pipeline dengan 1024 setelah pemeriksaan, salin perintah ini:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --scene togog_tualen \
+  --start-from training
+~~~
+
+#### Pilihan B: 1600 ? konfigurasi yang akan diuji
+
+Pemeriksaan tanpa menjalankan training:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali_1600.yaml \
+  --scene togog_tualen \
+  --start-from training \
+  --dry-run
+~~~
+
+Pastikan baris TRAIN menampilkan --resolution 1600 dan --enable_allocator_gc.
+Untuk menjalankan pipeline dengan 1600 setelah pemeriksaan, salin perintah ini:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali_1600.yaml \
+  --scene togog_tualen \
+  --start-from training
+~~~
+
+Dry-run memeriksa command dan tidak menguji kemampuan GPU, kebutuhan VRAM,
+atau keberhasilan training. Konfigurasi 1600 belum terbukti berhasil di server.
+Setiap command tanpa --dry-run memulai run penuh, bukan uji singkat.
+
+Jika output scene sudah berisi hasil, pipeline membuat folder runs/<waktu>_<id>
+untuk percobaan berikutnya. CSV rekap menggunakan identitas eksperimen; run
+ulang dengan identitas yang sama dapat memperbarui baris rekap sebelumnya.
+Saat membandingkan hasil, catat resolusi aktual, view train/test, waktu, dan
+metode pengukuran VRAM yang sama.
+
 ## 4. Pemeriksaan sebelum menjalankan
 
 Tampilkan scene yang ditemukan:
