@@ -2,3 +2,4 @@
 PyYAML
 psutil
 scipy
+Pillow

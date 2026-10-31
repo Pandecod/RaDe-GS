@@ -161,6 +161,7 @@ class PipelineFlow(unittest.TestCase):
 
             result = execute_scene(config, scene, output, fixture)
             self.assertEqual(result["failed_stage"], "mesh_extraction_oom")
+            self.assertEqual(result["mesh_extraction"]["duration_seconds"], 1.0)
             self.assertEqual(len(commands_seen), 4)
             self.assertEqual(commands_seen[3][-10:], ["-r", "2", "--num_cluster", "8",
                                                      "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])

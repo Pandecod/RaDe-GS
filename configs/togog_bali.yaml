@@ -1,3 +1,4 @@
+# Konfigurasi penelitian utama: training 1920, 30000 iterasi, allocator GC, mesh TNT.
 project:
   name: RaDe-GS
   dataset: Dataset Togog Bali
@@ -17,7 +18,7 @@ training:
     - "--iterations"
     - "30000"
     - "--resolution"
-    - "1024"
+    - "1920"
     - "--profile_training"
     - "--profile_from"
     - "1800"

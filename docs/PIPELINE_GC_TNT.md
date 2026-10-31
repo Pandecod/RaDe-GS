@@ -14,8 +14,8 @@ Salin dengan struktur folder yang sama di /home/pande/projects/RaDe-GS:
 | research_pipeline/config.py | Validasi CLI TNT serta nilai voxel_size dan max_depth. |
 | research_pipeline/commands.py | Membentuk perintah mesh_extract_tnt.py. |
 | research_pipeline/runner.py | Mencatat skrip dan parameter mesh dalam hasil run. |
-| configs/togog_bali.yaml | Konfigurasi utama GC, 30.000 iterasi, resolusi 1024, profiling dan mesh TNT. |
-| configs/togog_bali_full_gc.yaml | Alternatif yang sama dengan root output dan CSV full_gc. |
+| configs/togog_bali.yaml | Konfigurasi utama GC, 30.000 iterasi, resolusi 1920, profiling dan mesh TNT; hasil di output/togog_bali. |
+| configs/togog_bali_full_gc.yaml | Konfigurasi pembanding 1024 dengan root output dan CSV full_gc. |
 | requirements.txt | Menetapkan open3d==0.19.0 untuk instalasi berikutnya. |
 
 train.py harus merupakan versi yang sudah memiliki --enable_allocator_gc.
@@ -30,7 +30,8 @@ tests dapat ikut disertakan ke GitHub, tetapi tidak diperlukan untuk eksekusi se
 
 ## Pengaturan yang aktif
 
-- Kedua YAML: --enable_allocator_gc, --iterations 30000, --resolution 1024.
+- Semua YAML: --enable_allocator_gc dan --iterations 30000.
+- Konfigurasi utama togog_bali.yaml: --resolution 1920; full_gc tetap 1024.
 - Profiling 1800–30000 setiap 100 iterasi, sampel kontrol, telemetry GPU 1 detik.
 - Checkpoint pada 3000, 7000, 15000, 25000.
 - Mesh: -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 8.0.
@@ -47,7 +48,9 @@ tests dapat ikut disertakan ke GitHub, tetapi tidak diperlukan untuk eksekusi se
   tidak aktif. Untuk menonaktifkannya di pipeline, hapus flag tersebut dari YAML.
 - Untuk menonaktifkan profiling, hapus --profile_training dari training.extra_args.
 
-Konfigurasi utama menulis ke output/togog_bali/<scene>.
+Mulai 30 Oktober 2026, konfigurasi utama menulis ke
+output/togog_bali/<scene> dengan CSV
+research_results/experiment_results.csv.
 Alternatif full_gc menulis ke output/togog_bali/full_gc/<scene>.
 Jika folder scene sudah berisi hasil, runner membuat runs/<waktu>_<id>
 untuk eksekusi baru. Dry-run menampilkan path dasar; path aktual run ulang
@@ -71,7 +74,7 @@ python -B research_pipeline/run_all.py \
   --dry-run
 ~~~
 
-Pastikan TRAIN memuat --enable_allocator_gc, --iterations 30000, --resolution 1024.
+Pastikan TRAIN memuat --enable_allocator_gc, --iterations 30000, --resolution 1920.
 Pastikan MESH memanggil mesh_extract_tnt.py dengan voxel_size 0.009 dan max_depth 8.0.
 Dry-run tidak menjalankan subprocess training/mesh atau membuat hasil eksperimen.
 

@@ -114,34 +114,47 @@ utama, PyTorch/CUDA, dan ekstensi native tetap mengikuti `README.md`.
 Konfigurasi utama berada di `configs/togog_bali.yaml`.
 
 ```yaml
+# Konfigurasi penelitian utama: training 1920, 30000 iterasi, allocator GC, mesh TNT.
 project:
   name: RaDe-GS
   dataset: Dataset Togog Bali
-
 dataset:
   root: /home/pande/projects/RaDe-GS/dataset/togog_bali
-
 output:
   root: output/togog_bali
-
 results:
   csv: /home/pande/projects/RaDe-GS/research_results/experiment_results.csv
-
 colmap:
   executable: colmap
   camera_model: OPENCV
   use_gpu: true
-
 training:
-  extra_args: []
-
+  extra_args:
+    - "--enable_allocator_gc"
+    - "--iterations"
+    - "30000"
+    - "--resolution"
+    - "1920"
+    - "--profile_training"
+    - "--profile_from"
+    - "1800"
+    - "--profile_until"
+    - "30000"
+    - "--profile_interval"
+    - "100"
+    - "--profile_control_samples"
+    - "--profile_gpu_interval"
+    - "1"
+    - "--checkpoint_iterations"
+    - "3000"
+    - "7000"
+    - "15000"
+    - "25000"
 rendering:
   enabled: true
   extra_args: []
-
 image_metrics:
   enabled: true
-
 mesh:
   enabled: true
   resolution: 2
@@ -173,95 +186,78 @@ Fungsi pengaturan penting:
 Parameter mesh `resolution`, `num_cluster`, dan `depth_ratio` dikunci pada
 `2`, `8`, dan `0.5` oleh validasi konfigurasi.
 
-### 3.1 Memilih resolusi training 1024 atau 1600
+### 3.1 Konfigurasi penelitian 1920 dan konfigurasi percobaan lama
 
-Pilih salah satu file YAML sebelum menjalankan pipeline:
+Mulai 30 Oktober 2026, gunakan configs/togog_bali.yaml untuk run penelitian baru.
+Konfigurasi utama sekarang memakai lebar training 1920 piksel sesuai pilihan
+pengguna. Pengaturan lainnya mengikuti percobaan 1600: allocator GC aktif,
+30.000 iterasi, profiling, dan mesh TNT. Percobaan Punakawan 1600 telah berhasil;
+run GPU penuh dengan 1920 belum diverifikasi dari komputer lokal ini.
 
-| Pilihan | File konfigurasi | Output untuk togog_tualen | CSV rekap |
+| Penggunaan | File konfigurasi | Root output | CSV utama |
 |---|---|---|---|
-| 1024 | configs/togog_bali.yaml | output/togog_bali/togog_tualen | research_results/experiment_results.csv |
-| 1600 | configs/togog_bali_1600.yaml | output/togog_bali/resolusi_1600/togog_tualen | research_results/experiment_results_1600.csv |
+| Penelitian utama 1920 | configs/togog_bali.yaml | output/togog_bali | research_results/experiment_results.csv |
+| Percobaan 1600 terdahulu | configs/togog_bali_1600.yaml | output/togog_bali/resolusi_1600 | research_results/experiment_results_1600.csv |
+| Pembanding lama 1024 | configs/togog_bali_full_gc.yaml | output/togog_bali/full_gc | research_results/experiment_results_full_gc.csv |
 
-Kedua konfigurasi mengaktifkan allocator GC, memakai 30.000 iterasi, profiling,
-dan parameter mesh TNT yang sama. Pilihan 1024 sudah pernah berhasil; 1600
-masih perlu diuji di server. File YAML 1600 dibuat terpisah supaya pengaturan
-dan output 1024 tetap tersimpan. Salin configs/togog_bali_1600.yaml dari
-komputer lokal ke folder configs/ pada server sebelum menggunakannya.
+Hasil penelitian disimpan sebagai <root output>/<nama scene>/, misalnya
+output/togog_bali/punakawan/. CSV laporan ringkas gabungan
+dibuat di research_results/experiment_results_laporan.csv.
+Nama folder scene tetap menjadi nama kelas dalam laporan.
 
-Untuk foto Tualen berukuran 3862 ? 2150 piksel, --resolution 1024 menghasilkan
-sekitar 1024 ? 570, sedangkan --resolution 1600 menghasilkan 1600 ? 890 piksel
-dengan perhitungan dan pembulatan pada kode ini. Ukuran bergantung pada foto
-input yang benar-benar dimuat. Pemilihan ini mengatur lebar gambar untuk
-training; pengaturan mesh -r 2 tetap terpisah dan memakai setengah dimensi
-gambar input.
-
-#### Menyiapkan terminal server
-
-Jalankan sekali di terminal Ubuntu/WSL server:
+Jalankan di terminal Ubuntu-22.04-E, sebagai pengguna pande. Salin konfigurasi
+dan kode pipeline terbaru ke checkout server sebelum memakai command berikut:
 
 ~~~bash
 conda activate radegs
 cd /home/pande/projects/RaDe-GS
-~~~
 
-Pastikan versi pipeline dan kedua file konfigurasi sudah disalin ke server.
-Pilih salah satu resolusi di bawah. --start-from training memakai hasil COLMAP
-yang sudah tersedia; command run memulai training baru sebanyak 30.000 iterasi,
-lalu menjalankan rendering, metrik gambar dan ekstraksi mesh yang aktif.
-
-#### Pilihan A: 1024 ? konfigurasi yang pernah berhasil
-
-Pemeriksaan tanpa menjalankan training:
-
-~~~bash
 python -B research_pipeline/run_all.py \
   --config configs/togog_bali.yaml \
-  --scene togog_tualen \
+  --scene punakawan \
   --start-from training \
   --dry-run
 ~~~
 
-Pastikan baris TRAIN menampilkan --resolution 1024 dan --enable_allocator_gc.
-Untuk menjalankan pipeline dengan 1024 setelah pemeriksaan, salin perintah ini:
+Pastikan TRAIN menampilkan --resolution 1920, --iterations 30000, dan
+--enable_allocator_gc; path hasil harus menunjuk output/togog_bali/punakawan/.
+Pastikan MESH memakai mesh_extract_tnt.py dan parameter yang sama seperti
+konfigurasi berhasil. Dry-run tidak menjalankan CUDA atau membuat hasil.
+
+Untuk menjalankan scene tersebut:
 
 ~~~bash
 python -B research_pipeline/run_all.py \
   --config configs/togog_bali.yaml \
-  --scene togog_tualen \
+  --scene punakawan \
   --start-from training
 ~~~
 
-#### Pilihan B: 1600 ? konfigurasi yang akan diuji
-
-Pemeriksaan tanpa menjalankan training:
-
-~~~bash
-python -B research_pipeline/run_all.py \
-  --config configs/togog_bali_1600.yaml \
-  --scene togog_tualen \
-  --start-from training \
-  --dry-run
-~~~
-
-Pastikan baris TRAIN menampilkan --resolution 1600 dan --enable_allocator_gc.
-Untuk menjalankan pipeline dengan 1600 setelah pemeriksaan, salin perintah ini:
+Ganti punakawan dengan nama folder dataset yang ingin dijalankan.
+Untuk menjalankan semua scene secara berurutan, hilangkan --scene:
 
 ~~~bash
 python -B research_pipeline/run_all.py \
-  --config configs/togog_bali_1600.yaml \
-  --scene togog_tualen \
+  --config configs/togog_bali.yaml \
   --start-from training
 ~~~
 
-Dry-run memeriksa command dan tidak menguji kemampuan GPU, kebutuhan VRAM,
-atau keberhasilan training. Konfigurasi 1600 belum terbukti berhasil di server.
-Setiap command tanpa --dry-run memulai run penuh, bukan uji singkat.
+Command tanpa --dry-run memulai training baru, dilanjutkan rendering, evaluasi,
+mesh, dan laporan. Jika folder output scene sudah berisi hasil, pipeline memakai
+runs/<waktu>_<id>/ untuk run berikutnya. CSV utama memperbarui baris dengan
+identitas eksperimen yang sama; CSV laporan ringkas mempertahankan folder run
+yang berbeda. Jangan menjalankan beberapa pipeline yang menulis CSV yang sama.
 
-Jika output scene sudah berisi hasil, pipeline membuat folder runs/<waktu>_<id>
-untuk percobaan berikutnya. CSV rekap menggunakan identitas eksperimen; run
-ulang dengan identitas yang sama dapat memperbarui baris rekap sebelumnya.
-Saat membandingkan hasil, catat resolusi aktual, view train/test, waktu, dan
-metode pengukuran VRAM yang sama.
+Untuk foto berukuran 3862 x 2150 piksel, lebar training 1920 menghasilkan sekitar
+1920 x 1069 piksel; foto 16:9 menghasilkan 1920 x 1080 piksel. ukuran aktual mengikuti rasio foto yang dimuat. Pengaturan
+mesh -r 2 terpisah dan memakai setengah dimensi gambar input.
+
+Nama folder hasil dan CSV utama mengikuti penamaan awal; resolusi training
+sekarang 1920. Penggantian YAML hanya mengubah konfigurasi run berikutnya. Hasil lama tidak
+dipindahkan, dihapus, atau diberi label ulang sebagai hasil penelitian baru.
+Periksa keberhasilan serta kelengkapan laporan baru sebelum menghapus hasil lama.
+Path Linux /home/pande/... mengikuti distro WSL yang sedang dibuka; pastikan
+menggunakan Ubuntu-22.04-E bila penyimpanan penelitian berada pada distro itu.
 
 ## 4. Pemeriksaan sebelum menjalankan
 
@@ -455,7 +451,7 @@ output/togog_bali/<scene>/
 | `image_metrics.json` | SSIM, PSNR, LPIPS, split, dan jumlah citra |
 | `mesh_metrics.json` | Durasi, resource, vertex, face, dan ukuran mesh |
 | `summary.json` | Status lengkap satu attempt |
-| `experiment_results.csv` | Tabel ringkas seluruh experiment ID |
+| `experiment_results.csv` | Rekap utama seluruh experiment ID |
 
 Mulai pemeriksaan kegagalan dari `research/summary.json`, lalu buka log untuk
 nilai `failed_stage` yang tercatat.
@@ -526,11 +522,12 @@ menjalankan training RaDe-GS atau membuktikan kualitas hasil GPU.
 
 ## Pembaruan 27 Oktober 2026
 
-Konfigurasi configs/togog_bali.yaml sekarang mengaktifkan allocator GC,
-30.000 iterasi, resolusi training 1024, dan profiling. Pipeline memakai
+Pada integrasi 27 Oktober, konfigurasi utama memakai allocator GC,
+30.000 iterasi, resolusi 1024, dan profiling. Mulai 30 Oktober 2026,
+configs/togog_bali.yaml memakai resolusi 1920 dengan root output/togog_bali
+seperti dijelaskan pada bagian 3.1. Pipeline memakai
 mesh_extract_tnt.py dengan Open3D 0.19.0, voxel_size 0.009, dan max_depth 8.0.
-Contoh training.extra_args kosong di atas adalah bentuk konfigurasi generik;
-untuk pengaturan yang berhasil gunakan YAML Togog Bali yang disertakan.
+Pengaturan aktif tercantum dalam YAML Togog Bali dan contoh bagian 3.
 Lihat [petunjuk penyalinan dan dry-run](docs/PIPELINE_GC_TNT.md).
 
 
@@ -576,7 +573,7 @@ python train.py \
   -m "$run_output" \
   --enable_allocator_gc \
   --iterations 30000 \
-  --resolution 1024 \
+  --resolution 1920 \
   --profile_training \
   --profile_from 1800 \
   --profile_until 30000 \
@@ -679,3 +676,143 @@ Untuk memulai run baru melalui pipeline, gunakan command yang sama tanpa
 --dry-run. Ini memulai training baru; untuk model yang sudah selesai gunakan
 bagian D. Panduan penyalinan kode ke server tersedia di
 [Pipeline GC + TNT](docs/PIPELINE_GC_TNT.md).
+
+## 14. Laporan otomatis: metrik, foto, splat, dan perbandingan
+
+Setelah kode terbaru disalin ke server, pipeline membuat laporan otomatis untuk
+setiap scene yang dijalankan. Perintah run tidak berubah. Contoh di Ubuntu-22.04-E:
+
+```bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --scene punakawan \
+  --start-from training
+```
+
+Perintah ini memulai training baru. Gunakan --dry-run untuk memeriksa perintah
+tanpa training atau membuat laporan. Untuk hasil training yang sudah ada, gunakan
+ekspor manual di bawah agar tidak perlu mengulang training.
+
+File kode yang diperlukan: research_pipeline/reporting.py,
+research_pipeline/runner.py, render.py, dan scripts/export_research_report.py.
+Tidak ada perubahan pada loss, densification, atau perhitungan metrik model.
+render.py hanya menambahkan manifest pasangan gambar setelah rendering setiap split.
+
+Laporan berada di <output scene>/research/laporan_<waktu>_<id>/:
+
+| File | Isi |
+| --- | --- |
+| tabel_evaluasi.csv | Satu baris untuk run ini; dapat dibuka di Excel |
+| detail_laporan.json | Sumber data, definisi VRAM, status gambar, lokasi PLY |
+| 01_<scene>_daftar_foto.csv | Seluruh pasangan render/GT yang tersedia pada iterasi laporan, nama foto kamera, split, ukuran piksel, dan lokasi file |
+| 01_<scene>/*_comparison.png | Lima contoh foto referensi di kiri dan render RaDe-GS di kanan |
+
+Kolom tabel: waktu ringkasan (UTC+08), folder scene/kelas, metode RaDe-GS,
+PSNR, SSIM, LPIPS, peak VRAM seluruh GPU (GiB), training (menit), split evaluasi,
+jumlah gambar evaluasi, status run, jumlah foto terdaftar, foto training,
+foto test, Gaussian awal, splats PLY akhir, iterasi PLY, dan folder output.
+
+Pipeline juga menggabungkan baris run secara otomatis ke CSV pendamping:
+nama results.csv pada konfigurasi diberi akhiran _laporan.
+Untuk configs/togog_bali.yaml:
+
+```text
+research_results/experiment_results_laporan.csv
+```
+
+Tabel tersebut mempertahankan run dengan folder output berbeda, termasuk
+percobaan ulang. CSV utama mengikuti results.csv pada YAML. Jangan menjalankan beberapa
+pipeline bersamaan yang menulis CSV yang sama; pembaruan ini untuk pipeline sekuensial.
+Run yang dilewati oleh --resume tidak dibuatkan laporan baru.
+
+Jumlah foto terdaftar adalah gambar kamera yang dipakai dari COLMAP, bukan jumlah
+semua file mentah atau frame video sebelum seleksi. Jumlah training, test, dan
+evaluasi dipisahkan. Nama foto berasal dari render_manifest.json pada folder
+train/ours_<iterasi>/ atau test/ours_<iterasi>/. Nama kamera dapat tidak menyertakan
+ekstensi asli. Untuk run lama tanpa manifest, nama asli dikosongkan, tidak ditebak
+dari nomor PNG. GT di sini adalah foto referensi, bukan ground truth geometri 3D.
+
+Jumlah splat dibaca dari element vertex pada header
+point_cloud/iteration_<iterasi akhir>/point_cloud.ply. Ini menghitung Gaussian
+hasil training, bukan vertex recon.ply/recon_post.ply. Untuk bundle lokal,
+iteration_<iterasi>/point_cloud.ply juga diterima. Membaca header tidak memeriksa
+keutuhan seluruh isi PLY. Jika PLY tidak disertakan, jumlah splat kosong.
+
+Peak VRAM seluruh GPU menggunakan maksimum sampel device_vram_used_mb dari run
+profiler yang sama, MiB dibagi 1024 menjadi GiB. Nilai ini mencakup aplikasi lain
+dan bisa melewatkan lonjakan di antara sampel. Ini berbeda dari VRAM per proses
+atau peak allocator PyTorch. Peak allocated/reserved PyTorch dicatat terpisah
+di detail_laporan.json. Jika tidak ada data, kolom kosong, bukan nol.
+Jika beberapa GPU terdeteksi, nilai seluruh GPU dikosongkan; beberapa manifest
+run dalam satu output ditolak agar eksperimen tidak tercampur.
+
+Waktu tabel adalah waktu ringkasan, bukan waktu mulai training. Training (menit)
+mencakup persiapan dan penyimpanan dalam subprocess training. Split train bukan
+uji pada foto yang belum dilihat model; pertahankan label split dalam penelitian.
+
+Lima gambar dipilih merata menurut urutan nama render, tanpa memilih yang
+terlihat paling bagus. Piksel RGB tidak di-resize atau diubah kecerahannya.
+Metrik tabel berasal dari evaluasi seluruh split, bukan lima contoh tersebut.
+Perbandingan dengan 3DGS memerlukan render 3DGS pada kamera yang sama.
+
+Untuk membuat laporan dari hasil lama atau bundle yang disalin, jalankan:
+
+```bash
+python -B scripts/export_research_report.py \
+  --outputs output/togog_bali/punakawan \
+  --pairs 5
+```
+
+Untuk menggabungkan beberapa hasil lama dalam satu tabel manual:
+
+```bash
+python -B scripts/export_research_report.py \
+  --outputs output/togog_bali/punakawan \
+            output/togog_bali/full_gc/togog_tualen
+```
+
+Ekspor manual memakai CPU dan tidak mengubah master CSV atau model. Setiap
+pemanggilan membuat folder laporan baru. --pairs 10 membuat sepuluh contoh.
+
+Jika memindahkan hasil ke komputer lokal untuk analisis, sertakan research/,
+point_cloud/iteration_30000/point_cloud.ply, dan folder train/ours_30000/
+serta test/ours_30000/ jika ada. Folder render berisi gt/, renders/, dan manifest.
+Tidak perlu checkpoint untuk laporan ini. Tanpa gambar, tabel tetap dibuat
+tetapi detail menandai missing_images; laporan tidak bisa membuat gambar dari
+file JSON saja. Kegagalan ekspor dilaporkan sebagai report_generation, hasil
+training yang sudah tersimpan tetap dipertahankan.
+
+### Pemeriksaan sebelum menjalankan konfigurasi 1920
+
+Jalankan pada distro Ubuntu-22.04-E di server, setelah kode terbaru disalin:
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -c "import torch, open3d, PIL, yaml, psutil, scipy; print('PyTorch:', torch.__version__); print('CUDA:', torch.cuda.is_available()); print('Open3D:', open3d.__version__)"
+python -m pip check
+df -h .
+nvidia-smi
+
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --start-from training \
+  --dry-run
+~~~
+
+Pastikan TRAIN memuat --resolution 1920 dan --enable_allocator_gc, lalu jalankan
+perintah yang sama tanpa --dry-run. Pemeriksaan CPU tidak menjamin kebutuhan
+VRAM/RAM atau kestabilan penyimpanan selama run GPU.
+
+Kegagalan scene dicatat pada research_results/experiment_results.csv
+(status, failed_stage, error_message, output_path) dan pada summary.json serta
+logs/ di output scene/attempt. Pipeline meneruskan antrean setelah kegagalan
+scene yang tertangani. Bila gagal menulis CSV utama, proses berhenti; kerusakan
+penyimpanan atau WSL crash tidak dapat diatasi dengan melanjutkan antrean.
+Jika pembuatan laporan gagal setelah tabel ditulis, status tabel dikoreksi
+menjadi failed bila penyimpanan masih dapat ditulis. CSV utama dan summary.json
+menjadi acuan pemeriksaan kegagalan.

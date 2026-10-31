@@ -1,6 +1,6 @@
 # Peta kode aktif RaDe-GS
 
-Diperbarui 27 Oktober 2026. Panduan ini membedakan kode utama, alat pemantauan,
+Diperbarui 30 Oktober 2026. Panduan ini membedakan kode utama, alat pemantauan,
 dan percobaan lama sebelum menyalin file ke server atau GitHub.
 
 ## File yang tetap dipakai
@@ -17,7 +17,7 @@ dan percobaan lama sebelum menyalin file ke server atau GitHub.
 | mesh_extract_tnt.py | Skrip bawaan ScalableTSDFVolume; berhasil menghasilkan mesh Tualen dengan Open3D 0.19.0 pada 26 Oktober 2026. |
 | mesh_extract.py | Skrip VoxelBlockGrid lama; dipertahankan untuk pembanding, tidak dipanggil pipeline. |
 | configs/togog_bali_full_gc.yaml | Salinan lokal konfigurasi training 30.000 iterasi dengan allocator GC. |
-| configs/togog_bali.yaml | Konfigurasi utama: GC aktif, 30.000 iterasi, resolusi 1024, profiling, dan mesh TNT. |
+| configs/togog_bali.yaml | Konfigurasi utama: GC aktif, 30.000 iterasi, resolusi 1920, profiling, mesh TNT, dan hasil di output/togog_bali. |
 | tests/ | Pengujian kode yang dipertahankan; pengujian ROI ikut diarsipkan bersama modul ROI. |
 | docs/training_profiling.md, docs/togog_tualen_full_gc_runbook.md | Dokumentasi profiling dan konfigurasi run penuh. |
 

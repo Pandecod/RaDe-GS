@@ -12,6 +12,8 @@
 import torch
 from scene import Scene
 import os
+from pathlib import Path
+from research_pipeline.utils import write_json
 from tqdm import tqdm
 from os import makedirs
 from gaussian_renderer import render
@@ -28,11 +30,20 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
 
+    image_records = []
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         rendering = render(view, gaussians, pipeline, background, kernel_size=kernel_size)["render"]
         gt = view.original_image[0:3, :, :]
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        image_records.append({
+            "file": f"{idx:05d}.png", "camera_image_name": view.image_name,
+            "width": int(gt.shape[2]), "height": int(gt.shape[1]),
+        })
+    write_json(Path(render_path).parent / "render_manifest.json", {
+        "split": name, "iteration": iteration, "images": image_records,
+    })
+
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():

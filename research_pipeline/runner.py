@@ -81,6 +81,7 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
     children: dict[int, psutil.Process] = {}
     process = None
     drain_thread = None
+    drain_errors = []
     with log_path.open("xb") as log:
         try:
             process = subprocess.Popen(command, cwd=REPO,
@@ -90,21 +91,26 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
 
             def _drain(src, log_file):
                 """Forward output immediately, including tqdm carriage-return updates."""
-                while True:
-                    raw = src.read1(4096)
-                    if not raw:
-                        break
-                    log_file.write(raw)
-                    log_file.flush()
-                    if tee:
-                        sys.stderr.buffer.write(raw)
-                        sys.stderr.buffer.flush()
+                try:
+                    while True:
+                        raw = src.read1(4096)
+                        if not raw:
+                            break
+                        log_file.write(raw)
+                        log_file.flush()
+                        if tee:
+                            sys.stderr.buffer.write(raw)
+                            sys.stderr.buffer.flush()
+                except Exception as exc:
+                    drain_errors.append(exc)
 
             drain_thread = threading.Thread(
                 target=_drain, args=(process.stdout, log), daemon=True)
             drain_thread.start()
 
             while process.poll() is None:
+                if drain_errors:
+                    raise RuntimeError(f"Subprocess output logging failed: {drain_errors[0]}") from drain_errors[0]
                 try:
                     for child in psutil.Process(process.pid).children(recursive=True):
                         children[child.pid] = child
@@ -120,6 +126,8 @@ def run_process(command: list[str], log_path: Path, interval: float = 1.0,
                     pass
 
             drain_thread.join()
+            if drain_errors:
+                raise RuntimeError(f"Subprocess output logging failed: {drain_errors[0]}") from drain_errors[0]
             result = ProcessResult(process.returncode, time.monotonic() - started,
                                    monitor.metrics(), monitor.warnings)
         finally:
@@ -266,6 +274,7 @@ def execute_scene(config: dict, scene: Scene, output: Path,
                                config["resource_monitor"]["interval_seconds"])
             mesh_process_metrics = {"duration_seconds": process.duration_seconds,
                                     **process.metrics}
+            result["mesh_extraction"].update(mesh_process_metrics)
             result["warnings"].extend(process.warnings)
             if process.returncode:
                 failed_stage = "mesh_extraction_oom" if is_oom_failure(
@@ -312,6 +321,8 @@ def run_batch(config: dict, scenes: list[Scene], resume: bool = False,
         timestamp, upsert_result, write_summary,
     )
 
+    from research_pipeline.reporting import automatic_report, sync_report_status
+
     csv_path = resolve_path(config["results"]["csv"])
     try:
         ensure_master_csv(csv_path)
@@ -340,6 +351,27 @@ def run_batch(config: dict, scenes: list[Scene], resume: bool = False,
         except (OSError, ValueError) as exc:
             result.update(status="failed", failed_stage="result_recording",
                           error_message=f"Unable to write summary.json: {exc}")
+        try:
+            if result.get("failed_stage") != "result_recording":
+                result["reporting"] = automatic_report(output, csv_path)
+                write_summary(result)
+        except (OSError, ValueError, KeyError, ImportError, RuntimeError) as exc:
+            result["reporting"] = {**result.get("reporting", {}),
+                                   **getattr(exc, "reporting", {}),
+                                   "status": "failed", "error": str(exc)}
+            result["warnings"].append(f"Report generation failed: {exc}")
+            logging.error("REPORT FAILED: %s", exc)
+            if result["status"] == "success":
+                result.update(status="failed", failed_stage="report_generation",
+                              error_message=str(exc))
+            try:
+                sync_report_status(result)
+            except (OSError, ValueError, KeyError, RuntimeError) as report_error:
+                logging.error("Unable to reconcile report status; use master CSV: %s", report_error)
+            try:
+                write_summary(result)
+            except (OSError, ValueError) as summary_error:
+                logging.error("Unable to record report failure: %s", summary_error)
         try:
             upsert_result(csv_path, result)
         except (OSError, RuntimeError, ValueError) as exc:

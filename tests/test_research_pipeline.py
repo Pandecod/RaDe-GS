@@ -103,10 +103,24 @@ class Phase1(unittest.TestCase):
 
     def test_shipped_gc_configs_dry_run_with_tnt_without_model_imports(self):
         from research_pipeline.config import REPO, load_config, repository_parser
-        for name in ("togog_bali.yaml", "togog_bali_full_gc.yaml"):
+        for name, width in (("togog_bali.yaml", 1920),
+                            ("togog_bali_1600.yaml", 1600),
+                            ("togog_bali_full_gc.yaml", 1024)):
             with self.subTest(config=name), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 config = load_config(REPO / "configs" / name)
+                if name == "togog_bali.yaml":
+                    reference = load_config(REPO / "configs/togog_bali_1600.yaml")
+                    expected_training = copy.deepcopy(reference["training"])
+                    resolution_index = expected_training["extra_args"].index("--resolution")
+                    expected_training["extra_args"][resolution_index + 1] = "1920"
+                    self.assertEqual(config["training"], expected_training)
+                    self.assertEqual(config["mesh"], reference["mesh"])
+                    self.assertEqual(config["output"]["root"], "output/togog_bali")
+                    self.assertEqual(config["results"]["csv"],
+                                     "/home/pande/projects/RaDe-GS/research_results/experiment_results.csv")
+                    self.assertNotEqual(config["output"], reference["output"])
+                    self.assertNotEqual(config["results"], reference["results"])
                 scene = make_scene(root / "dataset", "togog_tualen")
                 config["dataset"]["root"] = str(scene.parent)
                 config["output"]["root"] = str(root / "output")
@@ -114,7 +128,7 @@ class Phase1(unittest.TestCase):
                 built = commands(config, scene, root / "output/togog_tualen")
                 train = repository_parser("training").parse_args(built["training"][2:])
                 self.assertTrue(train.enable_allocator_gc)
-                self.assertEqual((train.iterations, train.resolution), (30000, 1024))
+                self.assertEqual((train.iterations, train.resolution), (30000, width))
                 mesh = repository_parser("mesh").parse_args(built["mesh_extraction"][2:])
                 self.assertEqual(built["mesh_extraction"][1], "mesh_extract_tnt.py")
                 self.assertEqual((mesh.resolution, mesh.num_cluster, mesh.depth_ratio,

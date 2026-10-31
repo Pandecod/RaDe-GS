@@ -82,5 +82,28 @@ class Phase2(unittest.TestCase):
                             Path(tmp) / "log", 0.01, sample=interrupt)
             self.assertFalse(psutil.pid_exists(seen[0]))
 
+
+    def test_output_thread_failure_terminates_child_and_is_reported(self):
+        import psutil
+        class BrokenSink:
+            @property
+            def buffer(self):
+                return self
+            def write(self, value):
+                raise OSError(5, "simulated output failure")
+            def flush(self):
+                pass
+        with tempfile.TemporaryDirectory() as tmp:
+            seen = []
+            with patch("research_pipeline.runner.sys.stderr", BrokenSink()):
+                with self.assertRaisesRegex(RuntimeError, "Subprocess output logging failed"):
+                    run_process([sys.executable, "-c",
+                                 "import os,time; os.write(1,b'output'); time.sleep(30)"],
+                                Path(tmp) / "output.log", .01, sample=seen.append)
+            self.assertTrue(seen)
+            self.assertFalse(psutil.pid_exists(seen[0]))
+
+
+
 if __name__ == "__main__":
     unittest.main()

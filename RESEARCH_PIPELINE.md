@@ -14,7 +14,7 @@ pip install -r requirements-research.txt
 ```
 
 `trimesh` is already present in the RaDe-GS requirements. The pipeline adds
-PyYAML, psutil, and SciPy.
+PyYAML, psutil, SciPy, and Pillow.
 
 ## Dataset layout and starting stage
 
@@ -91,8 +91,13 @@ Mesh extraction always uses the verified experiment command:
 python mesh_extract_tnt.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 8.0
 ```
 
-The Togog Bali YAML files enable allocator GC, 30,000 training iterations and
-1024-pixel training width. Open3D is pinned to 0.19.0 in requirements.txt.
+The primary configs/togog_bali.yaml enables allocator GC, 30,000 training
+iterations and 1920-pixel training width. Research outputs use
+output/togog_bali/<scene>/ and the master CSV is
+research_results/experiment_results.csv; the automatic report table is
+research_results/experiment_results_laporan.csv.
+The older togog_bali_1600.yaml experiment and togog_bali_full_gc.yaml
+1024-pixel baseline retain their separate paths. Open3D is pinned to 0.19.0 in requirements.txt.
 Mesh uses the latest saved iteration by default. mesh.voxel_size and
 mesh.max_depth must be positive; duplicate overrides in extra_args are rejected.
 Configuration validation fixes resolution, num_cluster and depth_ratio as above.
