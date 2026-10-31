@@ -103,9 +103,9 @@ class Phase1(unittest.TestCase):
 
     def test_shipped_gc_configs_dry_run_with_tnt_without_model_imports(self):
         from research_pipeline.config import REPO, load_config, repository_parser
-        for name, width in (("togog_bali.yaml", 1920),
-                            ("togog_bali_1600.yaml", 1600),
-                            ("togog_bali_full_gc.yaml", 1024)):
+        for name, width, max_depth in (("togog_bali.yaml", 1920, 7.0),
+                                       ("togog_bali_1600.yaml", 1600, 8.0),
+                                       ("togog_bali_full_gc.yaml", 1024, 8.0)):
             with self.subTest(config=name), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 config = load_config(REPO / "configs" / name)
@@ -115,7 +115,9 @@ class Phase1(unittest.TestCase):
                     resolution_index = expected_training["extra_args"].index("--resolution")
                     expected_training["extra_args"][resolution_index + 1] = "1920"
                     self.assertEqual(config["training"], expected_training)
-                    self.assertEqual(config["mesh"], reference["mesh"])
+                    expected_mesh = copy.deepcopy(reference["mesh"])
+                    expected_mesh["max_depth"] = max_depth
+                    self.assertEqual(config["mesh"], expected_mesh)
                     self.assertEqual(config["output"]["root"], "output/togog_bali")
                     self.assertEqual(config["results"]["csv"],
                                      "/home/pande/projects/RaDe-GS/research_results/experiment_results.csv")
@@ -132,7 +134,7 @@ class Phase1(unittest.TestCase):
                 mesh = repository_parser("mesh").parse_args(built["mesh_extraction"][2:])
                 self.assertEqual(built["mesh_extraction"][1], "mesh_extract_tnt.py")
                 self.assertEqual((mesh.resolution, mesh.num_cluster, mesh.depth_ratio,
-                                  mesh.voxel_size, mesh.max_depth), (2, 8, 0.5, 0.009, 8.0))
+                                  mesh.voxel_size, mesh.max_depth), (2, 8, 0.5, 0.009, max_depth))
                 # Default -1 selects the latest saved model, including short custom runs.
                 self.assertEqual(mesh.iteration, -1)
                 cfg = root / "config.yaml"
@@ -146,7 +148,7 @@ class Phase1(unittest.TestCase):
                 self.assertIn("--enable_allocator_gc", printed)
                 self.assertIn("mesh_extract_tnt.py", printed)
                 self.assertNotIn("python mesh_extract.py", printed)
-                self.assertIn("--voxel_size 0.009 --max_depth 8.0", printed)
+                self.assertIn(f"--voxel_size 0.009 --max_depth {max_depth}", printed)
                 self.assertEqual(before, sorted(str(p) for p in root.rglob("*")))
                 self.assertNotIn("torch", sys.modules)
                 self.assertNotIn("open3d", sys.modules)

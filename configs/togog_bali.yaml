@@ -45,7 +45,7 @@ mesh:
   num_cluster: 8
   depth_ratio: 0.5
   voxel_size: 0.009
-  max_depth: 8.0
+  max_depth: 7.0
   extra_args: []
 resource_monitor:
   interval_seconds: 5.0

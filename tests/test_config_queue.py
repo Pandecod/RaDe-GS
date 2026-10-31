@@ -2,7 +2,7 @@
 import contextlib
 import copy
 import io
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -75,14 +75,19 @@ class ConfigQueueTests(unittest.TestCase):
                 self.assertEqual(main(["--config", *paths]), 2)
                 run.assert_called_once()
 
-    def test_tanks_config_reads_wisnu_source_and_isolates_radegs_outputs(self):
+    def test_tanks_config_keeps_configurable_input_separate_from_radegs_outputs(self):
         config = load_config(REPO / "configs/tanks_temples.yaml")
         main_config = load_config(REPO / "configs/togog_bali.yaml")
-        self.assertEqual(config["dataset"]["root"], "/home/wisnu/projects/2DGS/datasets/tanks_temples")
+        source = PurePosixPath(config["dataset"]["root"])
+        self.assertTrue(source.is_absolute())
+        self.assertEqual(source.name, "tanks_temples")
         self.assertEqual(config["output"]["root"], "output/tanks_temples")
         self.assertEqual(config["results"]["csv"], "research_results/experiment_results_tanks_temples.csv")
         self.assertEqual(config["training"], main_config["training"])
-        self.assertEqual(config["mesh"], main_config["mesh"])
+        expected_mesh = copy.deepcopy(main_config["mesh"])
+        expected_mesh["max_depth"] = 8.0
+        self.assertEqual(config["mesh"], expected_mesh)
+        self.assertEqual(main_config["mesh"]["max_depth"], 7.0)
         self.assertNotIn("wisnu", config["output"]["root"])
         self.assertNotIn("wisnu", config["results"]["csv"])
 

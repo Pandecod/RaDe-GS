@@ -83,8 +83,8 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
         intrinsic = o3d.core.Tensor(intrinsic)
         extrinsic = o3d.core.Tensor((viewpoint_cam.world_view_transform.T).cpu().numpy().astype(np.float64))
         
-        frustum_block_coords = vbg.compute_unique_block_coordinates(depth, intrinsic, extrinsic, 1.0, 8.0)
-        vbg.integrate(frustum_block_coords, depth, color, intrinsic, extrinsic, 1.0, 8.0)
+        frustum_block_coords = vbg.compute_unique_block_coordinates(depth, intrinsic, extrinsic, 1.0, 7.0)
+        vbg.integrate(frustum_block_coords, depth, color, intrinsic, extrinsic, 1.0, 7.0)
         del render_pkg, color_array, depth_tensor, depth_array, depth, color
 
     # --- DI SINI LETAK PERUBAHAN EDIT KODE BARU KITA ---

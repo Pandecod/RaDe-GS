@@ -34,7 +34,8 @@ tests dapat ikut disertakan ke GitHub, tetapi tidak diperlukan untuk eksekusi se
 - Konfigurasi utama togog_bali.yaml: --resolution 1920; full_gc tetap 1024.
 - Profiling 1800–30000 setiap 100 iterasi, sampel kontrol, telemetry GPU 1 detik.
 - Checkpoint pada 3000, 7000, 15000, 25000.
-- Mesh: -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 8.0.
+- Mesh: -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009.
+- Batas depth uji Togog Bali utama sekarang 7.0; full_gc dan Tanks tetap 8.0.
 - Mesh memilih iterasi tersimpan paling akhir melalui default --iteration -1.
   Setelah training konfigurasi ini selesai, model yang dipakai adalah iterasi 30000.
   Untuk kebutuhan khusus, --iteration boleh diberikan melalui mesh.extra_args.
@@ -75,7 +76,7 @@ python -B research_pipeline/run_all.py \
 ~~~
 
 Pastikan TRAIN memuat --enable_allocator_gc, --iterations 30000, --resolution 1920.
-Pastikan MESH memanggil mesh_extract_tnt.py dengan voxel_size 0.009 dan max_depth 8.0.
+Pastikan MESH memanggil mesh_extract_tnt.py dengan voxel_size 0.009 dan max_depth 7.0 pada konfigurasi utama.
 Dry-run tidak menjalankan subprocess training/mesh atau membuat hasil eksperimen.
 
 requirements.txt tidak otomatis mengganti versi paket yang sudah terpasang.

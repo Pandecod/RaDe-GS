@@ -65,7 +65,8 @@ python -B research_pipeline/run_all.py \
 ```
 
 Remove --dry-run to finish all Togog Bali scenes before Tanks and Temples.
-The second config reads /home/wisnu/projects/2DGS/datasets/tanks_temples,
+The second config reads the dataset.root in configs/tanks_temples.yaml
+(currently /home/pande/projects/RaDe-GS/datasets/tanks_temples),
 with direct scene folders containing images/ and sparse/0/. RaDe-GS outputs use
 output/tanks_temples and research_results/experiment_results_tanks_temples.csv.
 Handled scene failures allow the next config; critical recording/config errors
@@ -100,11 +101,14 @@ to skip this extra GPU stage while retaining rendered images. When a test render
 has images it is evaluated; otherwise the training render is evaluated, matching
 this checkout's `metric.py` behavior for the default non-`--eval` configuration.
 
-Mesh extraction always uses the verified experiment command:
+Mesh extraction uses the TNT script. The current Togog Bali depth-limit trial uses:
 
 ```bash
-python mesh_extract_tnt.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 8.0
+python mesh_extract_tnt.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 7.0
 ```
+
+Tanks and Temples and earlier comparison configs retain max_depth 8.0.
+The optional automatic-radius experiment has been removed.
 
 The primary configs/togog_bali.yaml enables allocator GC, 30,000 training
 iterations and 1920-pixel training width. Research outputs use

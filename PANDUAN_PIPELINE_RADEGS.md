@@ -161,7 +161,7 @@ mesh:
   num_cluster: 8
   depth_ratio: 0.5
   voxel_size: 0.009
-  max_depth: 8.0
+  max_depth: 7.0
   extra_args: []
 ```
 
@@ -402,7 +402,7 @@ mesh:
   num_cluster: 8
   depth_ratio: 0.5
   voxel_size: 0.009
-  max_depth: 8.0
+  max_depth: 7.0
   extra_args: []
 ```
 
@@ -607,7 +607,7 @@ python mesh_extract_tnt.py \
   --num_cluster 8 \
   --depth_ratio 0.5 \
   --voxel_size 0.009 \
-  --max_depth 8.0
+  --max_depth 7.0
 ~~~
 
 Perubahan dari command lama untuk Togog Tualen:
@@ -615,7 +615,7 @@ Perubahan dari command lama untuk Togog Tualen:
 - Gunakan mesh_extract_tnt.py (ScalableTSDFVolume).
 - Ejaan opsi yang benar adalah --depth_ratio, bukan --depth_ration.
 - Pertahankan --num_cluster 8 dan --depth_ratio 0.5.
-- Sertakan --voxel_size 0.009 dan --max_depth 8.0.
+- Sertakan --voxel_size 0.009 dan --max_depth 7.0.
 - Gunakan Open3D 0.19.0, versi yang telah berhasil diuji.
 
 Parameter tersebut tidak memilih atau memotong hanya patung utama.
@@ -820,14 +820,15 @@ menjadi acuan pemeriksaan kegagalan.
 ## 15. Antrean Togog Bali lalu Tanks and Temples
 
 Gunakan RaDe-GS dan environment radegs dari checkout pande pada distro
-Ubuntu-22.04-E. Dataset kedua dibaca dari lokasi pengguna wisnu:
+Ubuntu-22.04-E. Dataset kedua dibaca dari dataset.root pada configs/tanks_temples.yaml;
+lokasi pada konfigurasi terbaru adalah:
 
 ~~~text
-/home/wisnu/projects/2DGS/datasets/tanks_temples
+/home/pande/projects/RaDe-GS/datasets/tanks_temples
 ~~~
 
 Alamat Windows yang sesuai:
-\\wsl.localhost\Ubuntu-22.04-E\home\wisnu\projects\2DGS\datasets\tanks_temples.
+\\wsl.localhost\Ubuntu-22.04-E\home\pande\projects\RaDe-GS\datasets\tanks_temples.
 Path dataset pada YAML menggunakan bentuk Linux. Tidak perlu menyalin dataset
 ke folder pande atau menjalankan model 2DGS.
 
@@ -853,9 +854,10 @@ tanks_temples/
 
 File COLMAP .txt yang lengkap juga diterima. Folder foto lain atau kelompok
 bertingkat seperti training/<scene>/ tidak otomatis dibaca sebagai scene
-langsung; periksa --list-scenes sebelum menjalankan. Pengguna pande perlu izin
-membaca dataset wisnu; pipeline memeriksa isinya saat discovery/validasi.
-Jangan mengubah kepemilikan seluruh /home/wisnu untuk mengatasi izin.
+langsung; periksa --list-scenes sebelum menjalankan. Pengguna yang menjalankan pipeline perlu izin
+membaca dataset sumber; pipeline memeriksa isinya saat discovery/validasi.
+Jika dataset berada pada akun pengguna lain, jangan mengubah kepemilikan
+seluruh direktori home untuk mengatasi izin.
 
 Periksa daftar folder kedua dataset:
 
@@ -916,7 +918,7 @@ untuk percobaan ulang. Model, checkpoint, mesh, dan laporan RaDe-GS ditulis
 ke output proyek RaDe-GS. Loader COLMAP bawaan dapat membuat
 sparse/0/points3D.ply pada sumber jika file itu belum ada. Bila pengguna pande
 hanya memiliki izin baca, minta pemilik dataset menyiapkan points3D.ply
-terlebih dahulu; tidak perlu mengganti kepemilikan direktori wisnu.
+terlebih dahulu; tidak perlu mengganti kepemilikan direktori sumber.
 
 ## 16. Uji ulang mesh_extract.py bawaan tanpa mengubah hasil TNT
 
@@ -1022,3 +1024,50 @@ belum sempat ditulis; log parsial tidak membuktikan keberhasilan.
 Keberhasilan baru dinilai setelah proses selesai tanpa error, kedua mesh
 tersimpan dan bisa dibuka, serta detail objek dibandingkan pada bagian/sudut
 yang sama. Jangan mengubah YAML antrean utama sebelum uji ini dinilai.
+
+## 17. Uji batas depth tetap 7.0
+
+Opsi depth otomatis/radius telah dibatalkan. Perubahan uji sekarang hanya
+menurunkan batas kedalaman dari 8.0 menjadi 7.0 dalam satuan koordinat
+rekonstruksi, belum tentu meter. Nilai lebih kecil bisa mengurangi permukaan
+yang jauh dari kamera, tetapi belum tentu memisahkan patung yang bersebelahan
+dan bisa memotong bagian objek.
+
+- configs/togog_bali.yaml: mesh.max_depth sekarang 7.0.
+- mesh_extract.py pada checkout ini: dua batas depth pada pencarian blok dan
+  integrasi disamakan menjadi 7.0 untuk uji non-TNT manual.
+- configs/tanks_temples.yaml serta konfigurasi 1024/1600 terdahulu tetap 8.0.
+- mesh_extract_tnt.py tetap memakai opsi --max_depth bawaan; pipeline Togog Bali
+  meneruskan nilai 7.0 dari YAML.
+- Training tetap 1920 piksel/30.000 iterasi, voxel tetap 0.009, dan rumus model
+  tidak berubah. Nama folder hasil serta pelaporan tetap seperti sebelumnya.
+
+Bagian 16 memakai skrip asli dari commit lama dengan depth 8.0 dan voxel 0.002;
+itu percobaan berbeda. Jangan menyebut uji 7.0 pada checkout yang telah
+disesuaikan sebagai salinan kode asli yang tidak dimodifikasi.
+
+Setelah kode terbaru disalin ke server, periksa:
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --start-from training \
+  --dry-run
+~~~
+
+Pastikan MESH menampilkan --max_depth 7.0. Command pipeline tanpa --dry-run
+memulai training baru; perubahan depth saja tidak memerlukan training ulang.
+
+Untuk ekstraksi TNT saja dari model yang sudah selesai, gunakan command bagian
+13 dengan --max_depth 7.0. Simpan hasil pembanding 8.0 terlebih dahulu karena
+ekstraksi menulis ulang mesh pada folder model.
+Untuk mesh_extract.py non-TNT lokal, nilai 7.0 sudah berada di kode; file ini
+tidak memiliki opsi CLI --max_depth setelah pembatalan fitur sebelumnya.
+Gunakan folder uji terpisah agar mesh TNT tetap tersimpan.
+
+Catat max_depth 7.0 dalam laporan eksperimen. Pada pipeline, nilainya tersimpan
+di research/summary.json pada mesh_extraction.max_depth dan perintah mesh.
+Penurunan ini bukan pengaturan voxel atau peningkatan resolusi detail.
