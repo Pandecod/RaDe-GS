@@ -3,7 +3,7 @@ project:
   name: RaDe-GS
   dataset: Tanks and Temples
 dataset:
-  root: /home/pande/projects/RaDe-GS/datasets/tanks_temples
+  root: /home/pande/projects/RaDe-GS/dataset/tanks_temples
 output:
   root: output/tanks_temples
 results:
