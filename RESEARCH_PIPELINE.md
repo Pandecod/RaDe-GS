@@ -56,6 +56,21 @@ python research_pipeline/run_all.py --config configs/togog_bali.yaml --resume
 python research_pipeline/run_all.py --config configs/togog_bali.yaml --force
 ```
 
+Multiple configs can be queued in the order supplied:
+
+```bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml configs/tanks_temples.yaml \
+  --start-from training --dry-run
+```
+
+Remove --dry-run to finish all Togog Bali scenes before Tanks and Temples.
+The second config reads /home/wisnu/projects/2DGS/datasets/tanks_temples,
+with direct scene folders containing images/ and sparse/0/. RaDe-GS outputs use
+output/tanks_temples and research_results/experiment_results_tanks_temples.csv.
+Handled scene failures allow the next config; critical recording/config errors
+or Ctrl+C stop the queue. --resume applies to each config separately.
+
 Training progress is forwarded live, including `tqdm` updates that use carriage
 returns. Pressing Ctrl+C cleans up the active subprocess and exits with status
 130 without printing a Python traceback.

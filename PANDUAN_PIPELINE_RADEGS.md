@@ -816,3 +816,209 @@ penyimpanan atau WSL crash tidak dapat diatasi dengan melanjutkan antrean.
 Jika pembuatan laporan gagal setelah tabel ditulis, status tabel dikoreksi
 menjadi failed bila penyimpanan masih dapat ditulis. CSV utama dan summary.json
 menjadi acuan pemeriksaan kegagalan.
+
+## 15. Antrean Togog Bali lalu Tanks and Temples
+
+Gunakan RaDe-GS dan environment radegs dari checkout pande pada distro
+Ubuntu-22.04-E. Dataset kedua dibaca dari lokasi pengguna wisnu:
+
+~~~text
+/home/wisnu/projects/2DGS/datasets/tanks_temples
+~~~
+
+Alamat Windows yang sesuai:
+\\wsl.localhost\Ubuntu-22.04-E\home\wisnu\projects\2DGS\datasets\tanks_temples.
+Path dataset pada YAML menggunakan bentuk Linux. Tidak perlu menyalin dataset
+ke folder pande atau menjalankan model 2DGS.
+
+configs/tanks_temples.yaml menggunakan training 1920 piksel, 30.000 iterasi,
+allocator GC, profiling, rendering, metrik, mesh TNT, dan laporan otomatis yang
+sama dengan konfigurasi utama. Ini konfigurasi awal; parameter tersebut belum
+diverifikasi dengan run GPU pada dataset Tanks and Temples.
+
+Struktur yang dikonfirmasi pengguna adalah family/ dan house/ langsung di
+bawah tanks_temples; masing-masing berisi images/ dan sparse/0/. Huruf besar
+atau kecil nama folder mengikuti nama sebenarnya dan akan dideteksi otomatis.
+Contoh isi setiap scene:
+
+~~~text
+tanks_temples/
+  <nama_scene>/
+    images/
+    sparse/0/
+      cameras.bin
+      images.bin
+      points3D.bin
+~~~
+
+File COLMAP .txt yang lengkap juga diterima. Folder foto lain atau kelompok
+bertingkat seperti training/<scene>/ tidak otomatis dibaca sebagai scene
+langsung; periksa --list-scenes sebelum menjalankan. Pengguna pande perlu izin
+membaca dataset wisnu; pipeline memeriksa isinya saat discovery/validasi.
+Jangan mengubah kepemilikan seluruh /home/wisnu untuk mengatasi izin.
+
+Periksa daftar folder kedua dataset:
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml configs/tanks_temples.yaml \
+  --start-from training \
+  --list-scenes
+~~~
+
+Lalu periksa seluruh perintah tanpa menjalankan model:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml configs/tanks_temples.yaml \
+  --start-from training \
+  --dry-run
+~~~
+
+Jika tidak ada INVALID/FAILED dan semua path benar, jalankan antrean:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml configs/tanks_temples.yaml \
+  --start-from training
+~~~
+
+Urutan mengikuti penulisan YAML: semua scene Togog Bali diselesaikan terlebih
+dahulu (training sampai laporan), kemudian semua scene Tanks and Temples.
+Folder scene dalam setiap dataset diproses menurut nama.
+Terminal menampilkan [CONFIG 1/2] dan [CONFIG 2/2], serta [nomor scene/total scene].
+Kegagalan scene yang tertangani tidak membatalkan dataset berikutnya; proses
+mengembalikan kode 1 setelah seluruh antrean selesai bila ada scene yang gagal.
+Error konfigurasi, kegagalan CSV utama, dan Ctrl+C menghentikan antrean.
+WSL crash juga menghentikan proses, sehingga antrean tidak berlanjut otomatis.
+
+Tambahkan --resume pada command antrean untuk melewati scene yang sudah berhasil
+dengan konfigurasi sama pada masing-masing CSV. Ini tidak melanjutkan checkpoint.
+Jika Togog Bali sudah berjalan dengan command lama, command antrean baru tidak
+menempel pada proses lama; jalankan setelah proses itu selesai dengan --resume.
+Jangan menjalankan kedua command secara bersamaan pada GPU yang sama.
+Opsi --scene, bila diberikan, berlaku pada setiap konfigurasi; untuk seluruh
+antrean dua dataset, hilangkan opsi tersebut.
+
+| Dataset | Output di checkout RaDe-GS | CSV utama |
+|---|---|---|
+| Togog Bali | output/togog_bali/<scene>/ | research_results/experiment_results.csv |
+| Tanks and Temples | output/tanks_temples/<scene>/ | research_results/experiment_results_tanks_temples.csv |
+
+Tabel ringkas Tanks and Temples berada di
+research_results/experiment_results_tanks_temples_laporan.csv.
+Gambar perbandingan, daftar foto, dan detail laporan berada di
+output/tanks_temples/<scene>/research/laporan_<waktu>_<id>/, atau di dalam runs/
+untuk percobaan ulang. Model, checkpoint, mesh, dan laporan RaDe-GS ditulis
+ke output proyek RaDe-GS. Loader COLMAP bawaan dapat membuat
+sparse/0/points3D.ply pada sumber jika file itu belum ada. Bila pengguna pande
+hanya memiliki izin baca, minta pemilik dataset menyiapkan points3D.ply
+terlebih dahulu; tidak perlu mengganti kepemilikan direktori wisnu.
+
+## 16. Uji ulang mesh_extract.py bawaan tanpa mengubah hasil TNT
+
+Kedua skrip ekstraksi disediakan oleh RaDe-GS. Pemilihan untuk penelitian perlu
+dicatat bersama versi kode, parameter, environment, waktu, dan hasilnya.
+Tidak perlu training ulang untuk membandingkan ekstraksi dari Gaussian yang sama.
+
+Penting: mesh_extract.py pada checkout ini sudah dimodifikasi pada percobaan
+terdahulu. Antara lain, voxel_size menjadi 0.009, integrasi dilakukan per kamera,
+block_count menjadi 20000, dan weight_threshold menjadi 3.0.
+Jangan menyebut file tersebut versi bawaan yang belum dimodifikasi.
+
+Uji di bawah mengambil mesh_extract.py dari commit dasar c7c56cc pada riwayat Git
+checkout ini, tanpa mengubah isi skripnya. Versi tersebut memakai
+VoxelBlockGrid pada CPU, voxel_size 0.002, block_count 50000, dan menyimpan
+render warna/depth seluruh kamera sebelum integrasi. Ini berbeda dari
+parameter/jalur TNT yang berhasil; voxel lebih kecil dan buffering seluruh kamera
+dapat meningkatkan kebutuhan RAM. Belum ada jaminan run ini selesai pada server.
+Perbedaan hasil tidak boleh langsung dianggap hanya akibat pilihan ekstraktor,
+karena ukuran voxel serta pemrosesannya juga berbeda.
+
+Gunakan environment radegs yang sudah memiliki Open3D 0.19.0.
+Tidak perlu menyalin environment, memasang ulang paket, atau mengubah konfigurasi
+pipeline utama. Jalankan uji ketika GPU dan RAM server tidak sedang dipakai
+untuk training lain.
+
+Contoh memakai model Tualen yang sebelumnya sudah selesai.
+Jika model yang dibandingkan berbeda, ganti nilai model dengan folder yang
+memiliki cfg_args dan point_cloud/iteration_30000/point_cloud.ply.
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -c "import torch, open3d; print('PyTorch:', torch.__version__); print('Open3D:', open3d.__version__); print('CUDA:', torch.cuda.is_available())"
+free -h
+df -h .
+nvidia-smi
+~~~
+
+Perintah berikut membuat folder uji baru di research/. Model Gaussian hanya
+diakses lewat symlink; tidak disalin dan tidak dilatih ulang. File konfigurasi
+kecil dan sumber ekstraktor disimpan untuk menelusuri percobaan.
+Scene akan menulis multi_view.json dan mesh ke folder uji ini.
+
+~~~bash
+(
+set -eu
+cd /home/pande/projects/RaDe-GS
+
+model=/home/pande/projects/RaDe-GS/output/togog_bali/full_gc/togog_tualen
+iteration=30000
+revision=c7c56cc
+
+test -f "$model/cfg_args"
+test -f "$model/point_cloud/iteration_$iteration/point_cloud.ply"
+git cat-file -e "$revision:mesh_extract.py"
+
+mkdir -p "$model/research"
+mesh_trial=$(mktemp -d "$model/research/mesh_vbg_original_XXXXXXXX")
+git show "$revision:mesh_extract.py" > "$mesh_trial/mesh_extract.py"
+git rev-parse "$revision" > "$mesh_trial/extractor_revision.txt"
+git rev-parse HEAD > "$mesh_trial/checkout_revision.txt"
+sha256sum "$mesh_trial/mesh_extract.py" > "$mesh_trial/extractor_sha256.txt"
+cp -- "$model/cfg_args" "$mesh_trial/cfg_args"
+ln -s -- "$model/point_cloud" "$mesh_trial/point_cloud"
+
+printf 'Model: %s\nFolder uji: %s\n' "$model" "$mesh_trial"
+printf 'iteration=%s\nresolution=2\nnum_cluster=8\ndepth_ratio=0.5\nvoxel_size_in_original_script=0.002\n' "$iteration" > "$mesh_trial/parameters.txt"
+
+mesh_started=$(date +%s)
+set +e
+PYTHONPATH="$PWD" python -u "$mesh_trial/mesh_extract.py" \
+  -m "$mesh_trial" \
+  --iteration "$iteration" \
+  -r 2 \
+  --num_cluster 8 \
+  --depth_ratio 0.5 2>&1 | tee "$mesh_trial/mesh.log"
+mesh_exit_code=${PIPESTATUS[0]}
+set -e
+mesh_finished=$(date +%s)
+
+printf '%s\n' "$mesh_exit_code" > "$mesh_trial/exit_code.txt"
+printf '%s\n' "$((mesh_finished - mesh_started))" > "$mesh_trial/elapsed_seconds.txt"
+printf 'Kode keluar: %s\nFolder uji: %s\n' "$mesh_exit_code" "$mesh_trial"
+
+if [ "$mesh_exit_code" -eq 0 ]; then
+    ls -lh "$mesh_trial/recon.ply" "$mesh_trial/recon_post.ply"
+fi
+exit "$mesh_exit_code"
+)
+~~~
+
+Pengaturan voxel 0.002 berasal dari skrip asli; opsi --voxel_size tidak tersedia
+pada versi tersebut. Satuan koordinat tidak otomatis meter/milimeter.
+Output TNT pada folder model tetap tersedia untuk dibandingkan.
+Log dan hasil percobaan manual ini berada di folder uji, bukan otomatis menjadi
+baris eksperimen sukses pada CSV utama. Nilai durasi merupakan keseluruhan proses
+ekstraksi, termasuk pemuatan model, rendering depth, integrasi, dan post-processing.
+Jika WSL berhenti atau proses terputus, exit_code.txt/elapsed_seconds.txt mungkin
+belum sempat ditulis; log parsial tidak membuktikan keberhasilan.
+
+Keberhasilan baru dinilai setelah proses selesai tanpa error, kedua mesh
+tersimpan dan bisa dibuka, serta detail objek dibandingkan pada bagian/sudut
+yang sama. Jangan mengubah YAML antrean utama sebelum uji ini dinilai.
