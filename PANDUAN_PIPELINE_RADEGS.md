@@ -1162,3 +1162,74 @@ ekstraksi GPU selesai.
 
 Jalankan uji satu scene ini dahulu sebelum memakai konfigurasi non-TNT untuk
 seluruh antrean. Jangan menghapus hasil pembanding sebelum menilai mesh baru.
+
+## 19. Mengulang mesh satu objek dengan log dan pengukuran resource
+
+Jika training/rendering berhasil tetapi ekstraksi mesh gagal, gunakan perintah
+khusus berikut. Jangan menjalankan run_all.py --start-from training --resume
+untuk kasus ini karena scene berstatus gagal akan dilatih ulang.
+
+Jalankan di Ubuntu server, pada environment radegs, setelah antrean selesai:
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -B scripts/retry_mesh.py \
+  --model output/togog_bali/dewa_brahma \
+  --script mesh_extract.py \
+  --iteration 30000 \
+  --resolution 2 \
+  --num-cluster 8 \
+  --depth-ratio 0.5 \
+  --voxel-size 0.009 \
+  --max-depth 20.0
+~~~
+
+Gunakan output_path dari CSV jika model sebenarnya berada di runs/<id>/.
+Perintah membutuhkan cfg_args dan point_cloud/iteration_30000/point_cloud.ply
+pada folder model. Skrip ini harus disalin atau di-push/pull ke server dahulu.
+Untuk percobaan TNT, ganti hanya --script menjadi mesh_extract_tnt.py.
+
+Contoh depth 20.0 adalah percobaan eksplisit untuk Dewa Brahma, bukan penggantian
+YAML utama atau rekomendasi universal. Diagnosis kamera pertama IMG_000009
+menemukan depth minimum 8.349998, median 17.726807, serta nol piksel dalam batas
+7.0 maupun 8.0. Percobaan non-TNT 8.0 tetap gagal sebelum integrasi pertama.
+Ini belum menentukan batas ideal objek atau membuktikan semua kamera masuk 20.0.
+Depth memakai satuan rekonstruksi, belum tentu meter. Batas lebih jauh dapat
+menambah cakupan dan kebutuhan memori.
+
+Setiap percobaan membuat folder baru pada:
+
+~~~text
+<model>/research/mesh_retry_<waktu>_<id>/
+  cfg_args
+  point_cloud -> folder point_cloud model asal
+  mesh.log
+  mesh_resources_<id>.csv
+  result.json
+  result.csv
+  recon_raw.ply atau recon.ply  (jika penulisan mesh mentah tercapai)
+  recon_post.ply               (jika penulisan mesh akhir tercapai)
+  research/mesh_metrics.json   (jika mesh akhir lolos pemeriksaan)
+~~~
+
+Model Gaussian diakses melalui symlink; tidak menyalin environment atau PLY besar.
+Config kecil disalin agar file multi_view.json dan mesh dari percobaan ini
+berada di folder baru. Model dan summary/mesh percobaan awal tidak ditimpa.
+
+result.csv dapat dibuka dengan Excel dan mencatat status, pesan error, script,
+iterasi, resolution, voxel/depth, durasi mesh detik/menit, sampel puncak RAM,
+VRAM proses, VRAM seluruh perangkat, serta vertex/face/ukuran mesh jika valid.
+Nilai VRAM proses yang tidak tersedia tetap kosong; tidak diganti VRAM perangkat.
+Angka perangkat mencakup workload lain dan merupakan maksimum sampel, bukan
+jaminan puncak sesaat. Durasi mesh mencakup pemuatan model hingga penyimpanan;
+waktu training yang lama tidak dihitung ulang. result.json menyimpan command,
+hash script, warnings, dan snapshot summary awal jika tersedia untuk konteks.
+
+Hasil retry ini belum mengubah status pada experiment_results.csv maupun rekap
+laporan utama; kegagalan awal tetap tersimpan. Periksa result.json/result.csv
+retry dan mesh sebelum menggabungkannya dengan metrik training/rendering awal.
+Percobaan manual yang sudah selesai tanpa monitoring tidak bisa menghasilkan
+angka puncak RAM/VRAM secara retrospektif. Riwayat terminal masih bisa disimpan
+sebagai bukti error, tetapi jangan mengisi angka yang tidak diukur.
