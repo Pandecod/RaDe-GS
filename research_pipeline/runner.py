@@ -160,7 +160,7 @@ def execute_scene(config: dict, scene: Scene, output: Path,
         "resolution": config["mesh"]["resolution"],
         "num_cluster": config["mesh"]["num_cluster"],
         "depth_ratio": config["mesh"]["depth_ratio"],
-        "script": "mesh_extract_tnt.py",
+        "script": config["mesh"].get("script", "mesh_extract_tnt.py"),
         "voxel_size": config["mesh"]["voxel_size"],
         "max_depth": config["mesh"]["max_depth"],
     }

@@ -18,7 +18,7 @@ DEFAULTS = {
     "training": {"extra_args": []},
     "rendering": {"enabled": True, "extra_args": []},
     "image_metrics": {"enabled": True},
-    "mesh": {"enabled": True, "resolution": 2, "num_cluster": 8,
+    "mesh": {"enabled": True, "script": "mesh_extract_tnt.py", "resolution": 2, "num_cluster": 8,
              "depth_ratio": 0.5, "voxel_size": 0.009, "max_depth": 8.0, "extra_args": []},
     "resource_monitor": {"interval_seconds": 5.0},
     "resource_guard": {"enabled": True, "cooldown_before_mesh_seconds": 5,
@@ -30,7 +30,7 @@ DEFAULTS = {
                             "seed": 0},
 }
 
-def repository_parser(stage: str) -> argparse.ArgumentParser:
+def repository_parser(stage: str, mesh_script: str = "mesh_extract_tnt.py") -> argparse.ArgumentParser:
     # arguments/__init__.py imports only stdlib. Never import train/render/mesh.
     spec = importlib.util.spec_from_file_location("radegs_cli_arguments", REPO / "arguments/__init__.py")
     module = importlib.util.module_from_spec(spec)
@@ -40,7 +40,9 @@ def repository_parser(stage: str) -> argparse.ArgumentParser:
     module.PipelineParams(parser)
     if stage == "training":
         module.OptimizationParams(parser)
-    script = {"training": "train.py", "rendering": "render.py", "mesh": "mesh_extract_tnt.py"}[stage]
+    if stage == "mesh" and mesh_script not in ("mesh_extract.py", "mesh_extract_tnt.py"):
+        raise ValueError("mesh.script must be mesh_extract.py or mesh_extract_tnt.py")
+    script = {"training": "train.py", "rendering": "render.py", "mesh": mesh_script}[stage]
     tree = ast.parse((REPO / script).read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -103,11 +105,13 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
     mesh = config["mesh"]
     if (mesh["resolution"], mesh["num_cluster"], mesh["depth_ratio"]) != (2, 8, 0.5):
         raise ValueError("Verified mesh parameters are fixed: -r 2 --num_cluster 8 --depth_ratio 0.5")
+    if mesh["script"] not in ("mesh_extract.py", "mesh_extract_tnt.py"):
+        raise ValueError("mesh.script must be mesh_extract.py or mesh_extract_tnt.py")
     for stage in ("training", "rendering", "mesh"):
         extras = config[stage]["extra_args"]
         if not isinstance(extras, list) or any(not isinstance(a, str) for a in extras):
             raise ValueError(f"{stage}.extra_args must be a list of strings")
-        parser = repository_parser(stage)
+        parser = repository_parser(stage, mesh["script"])
         try:
             parsed, unknown = parser.parse_known_args(extras)
         except (argparse.ArgumentError, SystemExit) as exc:

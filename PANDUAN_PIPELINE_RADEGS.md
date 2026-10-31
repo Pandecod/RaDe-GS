@@ -157,6 +157,7 @@ image_metrics:
   enabled: true
 mesh:
   enabled: true
+  script: mesh_extract.py
   resolution: 2
   num_cluster: 8
   depth_ratio: 0.5
@@ -191,7 +192,8 @@ Parameter mesh `resolution`, `num_cluster`, dan `depth_ratio` dikunci pada
 Mulai 30 Oktober 2026, gunakan configs/togog_bali.yaml untuk run penelitian baru.
 Konfigurasi utama sekarang memakai lebar training 1920 piksel sesuai pilihan
 pengguna. Pengaturan lainnya mengikuti percobaan 1600: allocator GC aktif,
-30.000 iterasi, profiling, dan mesh TNT. Percobaan Punakawan 1600 telah berhasil;
+30.000 iterasi dan profiling. Ekstraksi utama kini memakai mesh_extract.py
+untuk uji Ngawasari (bagian 18). Percobaan Punakawan 1600 memakai TNT dan telah berhasil;
 run GPU penuh dengan 1920 belum diverifikasi dari komputer lokal ini.
 
 | Penggunaan | File konfigurasi | Root output | CSV utama |
@@ -1034,11 +1036,11 @@ yang jauh dari kamera, tetapi belum tentu memisahkan patung yang bersebelahan
 dan bisa memotong bagian objek.
 
 - configs/togog_bali.yaml: mesh.max_depth sekarang 7.0.
-- mesh_extract.py pada checkout ini: dua batas depth pada pencarian blok dan
-  integrasi disamakan menjadi 7.0 untuk uji non-TNT manual.
+- mesh_extract.py pada checkout ini memakai batas depth tetap dari YAML/CLI;
+  default-nya 7.0. Pemilihan pipeline non-TNT dijelaskan pada bagian 18.
 - configs/tanks_temples.yaml serta konfigurasi 1024/1600 terdahulu tetap 8.0.
-- mesh_extract_tnt.py tetap memakai opsi --max_depth bawaan; pipeline Togog Bali
-  meneruskan nilai 7.0 dari YAML.
+- Ekstraktor terpilih menerima --max_depth 7.0 dari YAML. Konfigurasi utama
+  sekarang memilih mesh_extract.py; Tanks tetap memakai TNT.
 - Training tetap 1920 piksel/30.000 iterasi, voxel tetap 0.009, dan rumus model
   tidak berubah. Nama folder hasil serta pelaporan tetap seperti sebelumnya.
 
@@ -1064,10 +1066,99 @@ memulai training baru; perubahan depth saja tidak memerlukan training ulang.
 Untuk ekstraksi TNT saja dari model yang sudah selesai, gunakan command bagian
 13 dengan --max_depth 7.0. Simpan hasil pembanding 8.0 terlebih dahulu karena
 ekstraksi menulis ulang mesh pada folder model.
-Untuk mesh_extract.py non-TNT lokal, nilai 7.0 sudah berada di kode; file ini
-tidak memiliki opsi CLI --max_depth setelah pembatalan fitur sebelumnya.
+Untuk mesh_extract.py non-TNT lokal, --max_depth dan --voxel_size kini tersedia
+agar pipeline dapat meneruskan angka tetap dari YAML; tidak ada mode radius otomatis.
 Gunakan folder uji terpisah agar mesh TNT tetap tersimpan.
 
 Catat max_depth 7.0 dalam laporan eksperimen. Pada pipeline, nilainya tersimpan
 di research/summary.json pada mesh_extraction.max_depth dan perintah mesh.
 Penurunan ini bukan pengaturan voxel atau peningkatan resolusi detail.
+
+## 18. Uji pipeline Ngawasari dengan mesh_extract.py tanpa TNT
+
+Konfigurasi utama configs/togog_bali.yaml sekarang memilih:
+
+~~~yaml
+mesh:
+  enabled: true
+  script: mesh_extract.py
+  resolution: 2
+  num_cluster: 8
+  depth_ratio: 0.5
+  voxel_size: 0.009
+  max_depth: 7.0
+  extra_args: []
+~~~
+
+Ini menggunakan mesh_extract.py yang ada pada checkout penelitian, dengan
+VoxelBlockGrid, integrasi per kamera, dan parameter/bobot yang sudah ada.
+Bukan salinan upstream murni pada bagian 16. Perubahan integrasi pipeline hanya
+menambahkan pemilihan skrip dan argumen voxel/depth; tidak menambahkan radius
+otomatis atau mengubah training/model. Skrip tersebut kini menerima
+--voxel_size dan --max_depth agar YAML sesuai dengan ekstraksi nyata.
+Tanpa opsi baru, default non-TNT tetap voxel 0.009 dan depth 7.0.
+
+configs/tanks_temples.yaml serta konfigurasi percobaan terdahulu tetap memakai
+mesh_extract_tnt.py melalui default mesh.script. Untuk kembali memakai TNT pada
+konfigurasi utama, ubah script: mesh_extract_tnt.py. Identitas eksperimen
+membedakan pilihan ekstraktor, sehingga --resume tidak mencampur keberhasilan
+TNT dengan percobaan VoxelBlockGrid. Identitas konfigurasi TNT lama dipertahankan.
+
+Dataset Ngawasari:
+\\wsl.localhost\Ubuntu-22.04-E\home\pande\projects\RaDe-GS\dataset\togog_bali\ngawasari
+
+Di Ubuntu-22.04-E, jalankan sebagai pande pada environment radegs.
+Pastikan seluruh perubahan kode terbaru sudah di-push/pull ke server; mengganti
+YAML saja tidak cukup bila runner/CLI ekstraktor masih versi lama.
+
+Periksa input serta environment tanpa menjalankan training:
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+ls -ld dataset/togog_bali/ngawasari/images
+ls -lh dataset/togog_bali/ngawasari/sparse/0/
+python -c "import torch, open3d; print('PyTorch:', torch.__version__); print('Open3D:', open3d.__version__); print('CUDA:', torch.cuda.is_available())"
+python -m pip check
+
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --scene ngawasari \
+  --start-from training \
+  --dry-run
+~~~
+
+Pastikan hanya [1/1] ngawasari yang dipilih, TRAIN memuat --resolution 1920,
+dan MESH memanggil mesh_extract.py dengan --max_depth 7.0, --voxel_size 0.009,
+-r 2, --num_cluster 8, --depth_ratio 0.5. Dataset harus memiliki images/ serta
+sparse/0/cameras.bin, images.bin, points3D.bin (atau file teks yang lengkap).
+
+Untuk menjalankan pipeline penuh Ngawasari:
+
+~~~bash
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali.yaml \
+  --scene ngawasari \
+  --start-from training
+~~~
+
+Urutan: training 30.000 iterasi, rendering, evaluasi citra, pemeriksaan resource,
+ekstraksi VoxelBlockGrid, analisis mesh, kemudian laporan otomatis.
+Ini memulai training baru; bukan ekstraksi ulang dari checkpoint.
+Konfigurasi utama berlaku untuk semua scene Togog Bali, tetapi --scene
+ngawasari membatasi command uji ini pada Ngawasari saja.
+
+Hasil pertama berada di output/togog_bali/ngawasari/. Jika sudah berisi hasil,
+run baru berada pada runs/<waktu>_<id>/. Model Gaussian berada di
+point_cloud/iteration_30000/point_cloud.ply, mesh mentah non-TNT di recon_raw.ply,
+dan mesh pascaproses di recon_post.ply.
+Laporan berada di research/, dengan rekap utama di
+research_results/experiment_results.csv dan experiment_results_laporan.csv.
+Skrip yang benar-benar dipilih tercatat pada summary.json dan perintah mesh.
+Kegagalan mesh tetap dicatat; kualitas dan kebutuhan memori VoxelBlockGrid pada
+Ngawasari perlu dibuktikan melalui run ini. Pengujian CPU/dry-run tidak menjamin
+ekstraksi GPU selesai.
+
+Jalankan uji satu scene ini dahulu sebelum memakai konfigurasi non-TNT untuk
+seluruh antrean. Jangan menghapus hasil pembanding sebelum menilai mesh baru.

@@ -14,7 +14,7 @@ Salin dengan struktur folder yang sama di /home/pande/projects/RaDe-GS:
 | research_pipeline/config.py | Validasi CLI TNT serta nilai voxel_size dan max_depth. |
 | research_pipeline/commands.py | Membentuk perintah mesh_extract_tnt.py. |
 | research_pipeline/runner.py | Mencatat skrip dan parameter mesh dalam hasil run. |
-| configs/togog_bali.yaml | Konfigurasi utama GC, 30.000 iterasi, resolusi 1920, profiling dan mesh TNT; hasil di output/togog_bali. |
+| configs/togog_bali.yaml | Konfigurasi utama GC, 30.000 iterasi, resolusi 1920, profiling dan mesh_extract.py; hasil di output/togog_bali. |
 | configs/togog_bali_full_gc.yaml | Konfigurasi pembanding 1024 dengan root output dan CSV full_gc. |
 | requirements.txt | Menetapkan open3d==0.19.0 untuk instalasi berikutnya. |
 
@@ -76,7 +76,9 @@ python -B research_pipeline/run_all.py \
 ~~~
 
 Pastikan TRAIN memuat --enable_allocator_gc, --iterations 30000, --resolution 1920.
-Pastikan MESH memanggil mesh_extract_tnt.py dengan voxel_size 0.009 dan max_depth 7.0 pada konfigurasi utama.
+Pastikan MESH mengikuti mesh.script: konfigurasi utama sekarang memanggil
+mesh_extract.py dengan voxel_size 0.009 dan max_depth 7.0; konfigurasi Tanks
+tetap memanggil mesh_extract_tnt.py.
 Dry-run tidak menjalankan subprocess training/mesh atau membuat hasil eksperimen.
 
 requirements.txt tidak otomatis mengganti versi paket yang sudah terpasang.

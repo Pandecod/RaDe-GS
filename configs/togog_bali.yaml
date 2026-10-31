@@ -1,4 +1,4 @@
-# Konfigurasi penelitian utama: training 1920, 30000 iterasi, allocator GC, mesh TNT.
+# Konfigurasi penelitian utama: training 1920, 30000 iterasi, allocator GC, mesh VoxelBlockGrid.
 project:
   name: RaDe-GS
   dataset: Dataset Togog Bali
@@ -41,6 +41,7 @@ image_metrics:
   enabled: true
 mesh:
   enabled: true
+  script: mesh_extract.py
   resolution: 2
   num_cluster: 8
   depth_ratio: 0.5

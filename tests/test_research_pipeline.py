@@ -101,7 +101,7 @@ class Phase1(unittest.TestCase):
             self.assertIn("COLMAP:", printed)
             self.assertIn("TRAIN:", printed)
 
-    def test_shipped_gc_configs_dry_run_with_tnt_without_model_imports(self):
+    def test_shipped_gc_configs_dry_run_with_selected_mesh_without_model_imports(self):
         from research_pipeline.config import REPO, load_config, repository_parser
         for name, width, max_depth in (("togog_bali.yaml", 1920, 7.0),
                                        ("togog_bali_1600.yaml", 1600, 8.0),
@@ -117,6 +117,7 @@ class Phase1(unittest.TestCase):
                     self.assertEqual(config["training"], expected_training)
                     expected_mesh = copy.deepcopy(reference["mesh"])
                     expected_mesh["max_depth"] = max_depth
+                    expected_mesh["script"] = "mesh_extract.py"
                     self.assertEqual(config["mesh"], expected_mesh)
                     self.assertEqual(config["output"]["root"], "output/togog_bali")
                     self.assertEqual(config["results"]["csv"],
@@ -131,8 +132,8 @@ class Phase1(unittest.TestCase):
                 train = repository_parser("training").parse_args(built["training"][2:])
                 self.assertTrue(train.enable_allocator_gc)
                 self.assertEqual((train.iterations, train.resolution), (30000, width))
-                mesh = repository_parser("mesh").parse_args(built["mesh_extraction"][2:])
-                self.assertEqual(built["mesh_extraction"][1], "mesh_extract_tnt.py")
+                mesh = repository_parser("mesh", config["mesh"]["script"]).parse_args(built["mesh_extraction"][2:])
+                self.assertEqual(built["mesh_extraction"][1], config["mesh"]["script"])
                 self.assertEqual((mesh.resolution, mesh.num_cluster, mesh.depth_ratio,
                                   mesh.voxel_size, mesh.max_depth), (2, 8, 0.5, 0.009, max_depth))
                 # Default -1 selects the latest saved model, including short custom runs.
@@ -146,8 +147,7 @@ class Phase1(unittest.TestCase):
                                            "--start-from", "training", "--dry-run"]), 0)
                 printed = out.getvalue()
                 self.assertIn("--enable_allocator_gc", printed)
-                self.assertIn("mesh_extract_tnt.py", printed)
-                self.assertNotIn("python mesh_extract.py", printed)
+                self.assertIn("python " + config["mesh"]["script"], printed)
                 self.assertIn(f"--voxel_size 0.009 --max_depth {max_depth}", printed)
                 self.assertEqual(before, sorted(str(p) for p in root.rglob("*")))
                 self.assertNotIn("torch", sys.modules)

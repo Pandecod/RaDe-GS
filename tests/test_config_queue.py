@@ -86,6 +86,7 @@ class ConfigQueueTests(unittest.TestCase):
         self.assertEqual(config["training"], main_config["training"])
         expected_mesh = copy.deepcopy(main_config["mesh"])
         expected_mesh["max_depth"] = 8.0
+        expected_mesh["script"] = "mesh_extract_tnt.py"
         self.assertEqual(config["mesh"], expected_mesh)
         self.assertEqual(main_config["mesh"]["max_depth"], 7.0)
         self.assertNotIn("wisnu", config["output"]["root"])

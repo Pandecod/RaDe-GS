@@ -101,13 +101,16 @@ to skip this extra GPU stage while retaining rendered images. When a test render
 has images it is evaluated; otherwise the training render is evaluated, matching
 this checkout's `metric.py` behavior for the default non-`--eval` configuration.
 
-Mesh extraction uses the TNT script. The current Togog Bali depth-limit trial uses:
+Mesh extraction selects mesh.script from YAML. The current Togog Bali trial uses:
 
 ```bash
-python mesh_extract_tnt.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 7.0
+python mesh_extract.py -m <output> -r 2 --num_cluster 8 --depth_ratio 0.5 --voxel_size 0.009 --max_depth 7.0
 ```
 
-Tanks and Temples and earlier comparison configs retain max_depth 8.0.
+Tanks and Temples and earlier comparison configs retain mesh_extract_tnt.py
+and max_depth 8.0. Omitted mesh.script defaults to the historical TNT extractor.
+The local VoxelBlockGrid script accepts fixed voxel/depth CLI arguments; its
+training and extraction algorithms are otherwise unchanged by this selection feature.
 The optional automatic-radius experiment has been removed.
 
 The primary configs/togog_bali.yaml enables allocator GC, 30,000 training

@@ -26,7 +26,7 @@ def commands(config: dict, dataset: Path, output: Path,
             result["image_metrics"] = [sys.executable, "-m", "research_pipeline.image_evaluator",
                                         "--output", str(output), "--scene-name", dataset.name]
     if config["mesh"]["enabled"]:
-        result["mesh_extraction"] = [sys.executable, "mesh_extract_tnt.py", "-m", str(output),
+        result["mesh_extraction"] = [sys.executable, config["mesh"].get("script", "mesh_extract_tnt.py"), "-m", str(output),
                                      "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5",
                                      "--voxel_size", str(config["mesh"]["voxel_size"]),
                                      "--max_depth", str(config["mesh"]["max_depth"]),

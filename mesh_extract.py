@@ -1,4 +1,5 @@
 import os
+import math
 from argparse import ArgumentParser
 
 import numpy as np
@@ -37,7 +38,10 @@ def post_process_mesh(mesh, cluster_to_keep=1):
     return mesh_0
 
 
-def extract_mesh(dataset, pipe, iteration, num_cluster=1):
+def extract_mesh(dataset, pipe, iteration, num_cluster=1, voxel_size=0.009, max_depth=7.0):
+    if not math.isfinite(voxel_size) or voxel_size <= 0 or not math.isfinite(max_depth) or max_depth <= 0:
+        raise ValueError("voxel_size and max_depth must be positive and finite")
+    print(f"[MESH] mesh_extract.py: voxel_size={voxel_size}; max_depth={max_depth}", flush=True)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
     kernel_size = dataset.kernel_size
@@ -47,8 +51,7 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     viewpoint_cam_list = scene.getTrainCameras()
 
-    # [RESOLUSI AMAN] Mengunci detail di 6 milimeter
-    voxel_size = 0.009
+    # Voxel size uses reconstruction coordinates, not automatically millimeters.
     o3d_device = o3d.core.Device("CPU:0")
     
     print(f"[PELACAK] Fase 2: Inisialisasi VoxelBlockGrid dengan resolusi {voxel_size}...")
@@ -83,8 +86,8 @@ def extract_mesh(dataset, pipe, iteration, num_cluster=1):
         intrinsic = o3d.core.Tensor(intrinsic)
         extrinsic = o3d.core.Tensor((viewpoint_cam.world_view_transform.T).cpu().numpy().astype(np.float64))
         
-        frustum_block_coords = vbg.compute_unique_block_coordinates(depth, intrinsic, extrinsic, 1.0, 7.0)
-        vbg.integrate(frustum_block_coords, depth, color, intrinsic, extrinsic, 1.0, 7.0)
+        frustum_block_coords = vbg.compute_unique_block_coordinates(depth, intrinsic, extrinsic, 1.0, max_depth)
+        vbg.integrate(frustum_block_coords, depth, color, intrinsic, extrinsic, 1.0, max_depth)
         del render_pkg, color_array, depth_tensor, depth_array, depth, color
 
     # --- DI SINI LETAK PERUBAHAN EDIT KODE BARU KITA ---
@@ -116,9 +119,12 @@ if __name__ == "__main__":
     parser.add_argument("--iteration", default=-1, type=int)
     parser.add_argument("--num_cluster", default=1, type=int)
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--voxel_size", default=0.009, type=float)
+    parser.add_argument("--max_depth", default=7.0, type=float)
     args = get_combined_args(parser)
     
     # Initialize system state (RNG)
     safe_state(args.quiet)
     with torch.no_grad():
-        extract_mesh(model.extract(args), pipeline.extract(args), args.iteration, args.num_cluster)
+        extract_mesh(model.extract(args), pipeline.extract(args), args.iteration, args.num_cluster,
+                     args.voxel_size, args.max_depth)

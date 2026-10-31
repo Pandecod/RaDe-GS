@@ -35,6 +35,10 @@ FIELDNAMES = [
 
 
 def experiment_id(scene_name: str, config: dict) -> str:
+    mesh_identity = dict(config["mesh"])
+    # Preserve previous identities for configs using the historical TNT default.
+    if mesh_identity.get("script", "mesh_extract_tnt.py") == "mesh_extract_tnt.py":
+        mesh_identity.pop("script", None)
     payload = {
         "scene_name": scene_name,
         "dataset": config["dataset"],
@@ -42,7 +46,7 @@ def experiment_id(scene_name: str, config: dict) -> str:
         "training": config["training"],
         "rendering": config["rendering"],
         "image_metrics": config["image_metrics"],
-        "mesh": config["mesh"],
+        "mesh": mesh_identity,
         "geometry_evaluation": config["geometry_evaluation"],
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
