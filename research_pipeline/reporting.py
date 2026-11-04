@@ -89,6 +89,11 @@ Angka puncak berasal dari sampel, sehingga puncak di antara sampel bisa terlewat
 Kolom kosong berarti tidak tersedia, bukan nol. Tidak tercatat bukan status gagal.
 Nilai train berasal dari foto latih; nilai test berasal dari foto yang dipisahkan.
 Status success menunjukkan tahapan wajib selesai, bukan jaminan kualitas visual.
+Status success_mesh_recovered adalah gabungan training/evaluasi asal dengan retry mesh sukses.
+Ini tidak menyatakan run asal berhasil sejak awal atau evaluasi GT mesh baru sudah berjalan.
+Untuk hasil pemulihan, baca pemulihan_mesh.csv: sumber, block resolution, dan statistik mesh.
+Berkas foto dan PLY training berasal dari asset_root/source_summary di detail_laporan.json;
+Folder output pada baris pemulihan menunjuk folder retry yang berisi mesh akhir.
 Jika Excel menampilkan ######## pada waktu, lebarkan kolomnya.
 CSV teknis utama tetap tersimpan sesuai results.csv pada konfigurasi.
 """
@@ -347,14 +352,20 @@ PHOTO_FIELDS = ["Split", "Iterasi", "Nama foto kamera", "File render", "File ref
                 "Lebar piksel", "Tinggi piksel", "Pasangan tersedia", "Sumber nama"]
 
 
-def update_report_table(path, rows, fields=FIELDS):
-    """Atomic table for sequential pipeline runs, keyed by output folder."""
-    from research_pipeline.utils import atomic_write
+def read_report_table(path, fields):
+    """Validate a reading view before any combined table is changed."""
     previous = read_csv(path) if path.exists() else []
     if path.exists():
         with path.open(encoding="utf-8-sig", newline="") as stream:
             if next(csv.reader(stream), []) != fields:
                 raise ValueError(f"Report CSV schema mismatch: {path}")
+    return previous
+
+
+def update_report_table(path, rows, fields=FIELDS):
+    """Atomic table for sequential pipeline runs, keyed by output folder."""
+    from research_pipeline.utils import atomic_write
+    previous = read_report_table(path, fields)
     indexed = {row["Folder output"]: row for row in previous}
     for row in rows:
         indexed[row["Folder output"]] = row
@@ -410,12 +421,22 @@ def update_result_tables(directory, master_csv):
     """Refresh readable result tables; keep original measurements unchanged."""
     table = master_csv.with_name(master_csv.stem + "_laporan.csv")
     summary_table = master_csv.with_name(master_csv.stem + "_ringkasan.csv")
+    from research_pipeline.mesh_recovery import RECOVERY_FIELDS
+    recovery_file = directory / "pemulihan_mesh.csv"
+    recovery_table = master_csv.with_name(master_csv.stem + "_pemulihan_mesh.csv")
+    read_report_table(table, FIELDS)
+    read_report_table(summary_table, SUMMARY_FIELDS)
+    if recovery_file.is_file():
+        read_report_table(recovery_table, RECOVERY_FIELDS)
     update_report_table(table, read_csv(directory / "tabel_evaluasi.csv"))
     # Include earlier report rows when creating or refreshing the short table.
     rows = [{key: row.get(key) for key in SUMMARY_FIELDS} for row in read_csv(table)]
     update_report_table(summary_table, rows, fields=SUMMARY_FIELDS)
     print(f"Tabel evaluasi gabungan: {table}")
     print(f"Ringkasan seluruh run: {summary_table}")
+    if recovery_file.is_file():
+        update_report_table(recovery_table, read_csv(recovery_file), fields=RECOVERY_FIELDS)
+        print(f"Rincian pemulihan mesh: {recovery_table}")
 
 
 def automatic_report(output, master_csv):
@@ -433,13 +454,20 @@ def automatic_report(output, master_csv):
             "resource_table": str(destination / "rincian_proses.csv")}
 
 
-def export(outputs, destination, pairs=5):
+def export(outputs, destination, pairs=5, *, mesh_retries=None):
     if pairs < 1:
         raise ValueError("--pairs must be at least 1")
+    from research_pipeline.mesh_recovery import prepare_mesh_recovery, recovery_row, RECOVERY_FIELDS
+    records = [(output.resolve(), read_json(output.resolve() / "research/summary.json"))
+               for output in outputs]
+    records.extend(prepare_mesh_recovery(path) for path in (mesh_retries or []))
+    if not records:
+        raise ValueError("Supply at least one output or successful mesh retry")
+    keys = [summary.get("output_path", str(output)) for output, summary in records]
+    if len(set(keys)) != len(keys):
+        raise ValueError("Duplicate output/retry folders in this export")
     prepared = []
-    for output in outputs:
-        output = output.resolve()
-        summary = read_json(output / "research" / "summary.json")
+    for output, summary in records:
         stamp = datetime.fromisoformat(summary["timestamp"].replace("Z", "+00:00"))
         if stamp.tzinfo is None:
             raise ValueError("Summary timestamp has no timezone")
@@ -454,6 +482,7 @@ def export(outputs, destination, pairs=5):
             rendering.get("split"), rendering.get("evaluation_image_count"), summary.get("status"),
         ]))
         counts, data = scene_data(output, summary, mem)
+        data["asset_root"] = str(output)
         row.update(counts)
         geometry = summary.get("geometry", {})
         row.update({
@@ -483,6 +512,8 @@ def export(outputs, destination, pairs=5):
             "experiment_id": summary.get("experiment_id"),
             "table_row": row, "memory": mem, "comparison": review,
             "geometry": summary.get("geometry", {}),
+            "mesh_extraction": summary.get("mesh_extraction", {}),
+            "recovery": summary.get("recovery"),
             "data": data, "photo_inventory": str(photo_file),
         })
         print(f"{summary['scene_name']}: comparison images = {review['status']}")
@@ -493,6 +524,10 @@ def export(outputs, destination, pairs=5):
     write_table(destination / "rincian_proses.csv", RESOURCE_FIELDS,
                 [row for _, summary, mem, _, _ in prepared
                  for row in resource_rows(summary, mem)])
+    recovery_rows = [recovery_row(summary) for _, summary, _, _, _ in prepared
+                     if summary.get("kind") == "mesh_recovery"]
+    if recovery_rows:
+        write_table(destination / "pemulihan_mesh.csv", RECOVERY_FIELDS, recovery_rows)
     (destination / "PETUNJUK_LAPORAN.md").write_text(REPORT_GUIDE, encoding="utf-8")
     with (destination / "detail_laporan.json").open("x", encoding="utf-8") as stream:
         json.dump({"notes": [
@@ -500,7 +535,9 @@ def export(outputs, destination, pairs=5):
             "Training duration includes preparation and saving within the training subprocess.",
             "Train-split metrics are not held-out test performance.",
             "Missing values stay blank; GPU total is not substituted with allocator/process memory.",
-            "One row per supplied output; this export does not modify the pipeline master CSV.",
+            "One row per supplied output/retry; this export does not modify the pipeline master CSV.",
+            "success_mesh_recovered reuses source training/rendering and a validated mesh retry. "
+            "GT geometry has not been evaluated for that new mesh.",
         ], "experiments": details}, stream, indent=2, ensure_ascii=False, allow_nan=False)
     print(f"Report: {destination}")
     print(f"Buka ringkasan utama: {destination / 'ringkasan_hasil.csv'}")
@@ -509,8 +546,10 @@ def export(outputs, destination, pairs=5):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--outputs", nargs="+", type=Path, required=True,
+    parser.add_argument("--outputs", nargs="+", type=Path, default=[],
                         help="Output folders containing research/summary.json")
+    parser.add_argument("--mesh-retries", nargs="+", type=Path, default=[],
+                        help="Successful mesh_retry folders or result.json files; reuse source training/rendering")
     parser.add_argument("--destination", type=Path,
                         help="New report directory; must not exist")
     parser.add_argument("--results-csv", type=Path,
@@ -518,10 +557,18 @@ def main():
                              "reading views; the technical CSV and source summary are unchanged")
     parser.add_argument("--pairs", type=int, default=5, help="Comparison pairs per scene (default: 5)")
     args = parser.parse_args()
-    destination = args.destination or (args.outputs[0] / "research" /
-        ("laporan_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]))
+    if not args.outputs and not args.mesh_retries:
+        parser.error("Supply --outputs or --mesh-retries")
+    if args.mesh_retries and args.results_csv is not None:
+        root, prefix = args.results_csv.parent, "laporan_pemulihan_"
+    else:
+        first = (args.outputs or args.mesh_retries)[0]
+        root = (first.parent if first.is_file() else first) / "research"
+        prefix = "laporan_"
+    destination = args.destination or (root / (prefix +
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]))
     try:
-        export(args.outputs, destination, args.pairs)
+        export(args.outputs, destination, args.pairs, mesh_retries=args.mesh_retries)
         if args.results_csv is not None:
             update_result_tables(destination.resolve(), args.results_csv)
     except (OSError, ValueError, KeyError, ImportError, RuntimeError) as exc:

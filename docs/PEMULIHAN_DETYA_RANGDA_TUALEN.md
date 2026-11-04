@@ -136,7 +136,7 @@ atau otomatis membuat status run asal menjadi success.
 Data GT yang belum tersedia tetap dilewati oleh pipeline; hal itu berbeda dari
 kegagalan training atau mesh pada log ini.
 
-## Pemulihan tualen: percobaan blok voxel 8
+## Pemulihan tualen dan rangda: blok voxel 8
 
 Diagnosis server tanggal 5 November 2026 menunjukkan:
 
@@ -146,7 +146,8 @@ Diagnosis server tanggal 5 November 2026 menunjukkan:
 - Pada Open3D 0.19.0, buffer bantu berisi empat Int32 per voxel.
   Untuk blok 16, buffer ini mencapai 2.537720 GiB pada 41.578 blok.
   Perhitungan byte offset 32-bit merupakan dugaan kuat, belum konfirmasi
-  stack C++ atau hasil uji perbaikan pustaka. Data ini belum tersedia untuk rangda.
+  stack C++ atau hasil uji perbaikan pustaka. Jumlah blok pada layout 16
+  belum diukur untuk rangda.
 
 Opsi retry `--block-resolution 8` mengubah ukuran kelompok voxel dalam memori,
 dari 16 x 16 x 16 menjadi 8 x 8 x 8. Jarak antarvoxel tetap 0.009,
@@ -159,8 +160,9 @@ VoxelBlockGrid hanya untuk proses retry tersebut. Integrasi dan pembentukan
 segitiga tetap dipanggil pada Open3D. Source `mesh_extract.py`, kode training,
 renderer, metric.py, YAML utama, dan hasil asal tetap seperti sebelumnya.
 
-Ini percobaan pemulihan, belum terbukti berhasil pada tualen. Mengubah ukuran blok
-dapat mengubah blok yang dialokasikan saat integrasi. Jangan mengklaim mesh pasti
+Run server pada 5 November 2026 berhasil mengekstrak tualen dan rangda dengan
+block_resolution=8; ringkasan dan foldernya dicatat di bawah. Mengubah ukuran
+blok dapat mengubah blok yang dialokasikan saat integrasi. Jangan mengklaim mesh pasti
 identik dengan block_resolution=16. Catat parameter ini dalam metodologi dan
 periksa cakupan permukaan, detail, vertex/face, serta metrik geometri jika GT ada.
 Untuk mempertahankan layout 16 juga, arah perbaikannya tetap pengujian pustaka
@@ -216,7 +218,56 @@ Buka `recon_post.ply` di folder retry baru saat status `success`. Jangan mengamb
 mesh lama dari folder model asal. CSV utama di `research_results` tetap menjadi
 rekaman percobaan awal; retry belum digabungkan atau mengubah statusnya.
 Tanpa `--block-resolution`, wrapper memakai jalur eksekusi native awal (layout 16).
-Rangda dapat diuji terpisah dengan mengganti path model setelah hasil tualen ditinjau.
+Untuk rangda, gunakan perintah retry yang sama dengan path model
+`output/hasil_radegs_v2/togog_bali/rangda`. Hasil percobaan yang sudah
+berhasil berikut tidak perlu diulang hanya untuk memperoleh catatannya.
+
+### Hasil server yang berhasil, 5 November 2026 (UTC+08)
+
+Sumber angka adalah log terminal yang diberikan pengguna, bukan pengukuran ulang
+oleh komputer lokal. Vertex di tabel ini merupakan vertex mesh, bukan jumlah
+Gaussian pada PLY training.
+
+| Objek | Status retry | Block resolution | Blok aktif | Kapasitas blok | Buffer bantu (GiB) | Vertex mentah | Vertex pascaproses |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| tualen | success | 8 | 213290 | 400000 | 1.627274 | 5704117 | 5418957 |
+| rangda | success | 8 | 174622 | 200000 | 1.332260 | 4719960 | 4397482 |
+
+Kedua percobaan memakai model 30000 yang sudah selesai, mesh_extract.py melalui
+launcher pemulihan, resolusi mesh 2, cluster 8, depth ratio 0.5, voxel 0.009,
+max depth 8.0, serta Open3D 0.19.0. Training tidak dijalankan ulang.
+
+Folder hasil, relatif terhadap `/home/pande/projects/RaDe-GS/`:
+
+```text
+output/hasil_radegs_v2/togog_bali/tualen/research/mesh_retry_20261104T225758Z_743ee5a1/
+output/hasil_radegs_v2/togog_bali/rangda/research/mesh_retry_20261104T230358Z_78370698/
+```
+
+Gunakan `recon_post.ply` dari folder masing-masing untuk mesh akhir,
+`recon.ply` untuk mesh mentah, dan `result.json`/`result.csv` untuk detail
+percobaannya. Nama folder memakai UTC, sehingga tanggal 20261104 pada nama
+folder sesuai dengan log pagi 5 November 2026 pada UTC+08.
+
+Pada server, `test_native_mesh_runtime` menjalankan 11 tes dengan hasil `OK`,
+termasuk ekstraksi bidang sintetis pada layout 16 dan 8. Baris `failed` di dalam
+keluaran tes berasal dari skenario kegagalan yang sengaja disimulasikan; status
+retry sebenarnya dibaca pada proses setelah ringkasan tes.
+
+Peringatan rangda `Write Ply clamped color value to valid range` muncul saat
+penulisan mesh mentah dan akhir. Penulis PLY Open3D mendeteksi komponen warna
+di luar rentang [0, 1], kemudian mengonversinya ke warna UInt8 dengan pembatasan
+nilai. Cabang ini mengolah warna, bukan mengubah koordinat vertex atau indeks
+segitiga. Kedua penulisan dilanjutkan dan wrapper mencatat `success`.
+Jumlah vertex yang terdampak atau besar koreksi warna tidak tersedia dalam log;
+periksa juga warna saat membuka PLY.
+[Sumber penulis PLY Open3D 0.19.0](https://github.com/isl-org/Open3D/blob/v0.19.0/cpp/open3d/io/file_format/FilePLY.cpp#L608).
+
+Dua keberhasilan ini membuktikan opsi pemulihan bekerja pada percobaan tersebut.
+Ini belum membuktikan kesetaraan mesh terhadap layout 16 atau penyebab C++ yang
+pasti. Untuk pelaporan penelitian, pisahkan status percobaan asal yang gagal
+dengan retry sukses dan cantumkan block_resolution=8. Tabel utama
+`research_results` belum digabungkan otomatis oleh wrapper retry.
 
 Sumber pemeriksaan:
 - [Kernel ekstraksi Open3D 0.19.0](https://github.com/isl-org/Open3D/blob/v0.19.0/cpp/open3d/t/geometry/kernel/VoxelBlockGridImpl.h).
@@ -227,3 +278,70 @@ Sumber opsi dan diagnosis:
 - [Opsi data_device pada implementasi asli 3DGS](https://github.com/graphdeco-inria/gaussian-splatting#--data_device).
 - [Python: exit code negatif berarti signal](https://docs.python.org/3.12/library/subprocess.html#subprocess.CompletedProcess.returncode).
 - [Python faulthandler](https://docs.python.org/3.12/library/faulthandler.html).
+
+## Memasukkan hasil retry ke laporan research_results
+
+Hasil yang sudah selesai dapat digabungkan tanpa mengulang training, rendering,
+metric.py, atau ekstraksi mesh. Gunakan exporter baru dengan `--mesh-retries`.
+Semua input dibaca dari file hasil run; tidak ada nilai eksperimen yang dibuat ulang.
+
+Setelah pembaruan kode tersedia di server, jalankan:
+
+```bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -B scripts/export_research_report.py \
+  --outputs output/hasil_radegs_v2/togog_bali/detya/runs/20261104T175137_fb0014f833 \
+  --mesh-retries \
+    output/hasil_radegs_v2/togog_bali/tualen/research/mesh_retry_20261104T225758Z_743ee5a1 \
+    output/hasil_radegs_v2/togog_bali/rangda/research/mesh_retry_20261104T230358Z_78370698 \
+  --results-csv research_results/hasil_radegs_v2/experiment_results_togog_bali.csv
+```
+
+`--outputs` mengekspor ulang laporan Detya yang sudah sukses. `--mesh-retries`
+menggabungkan catatan training dan evaluasi asal Tualen/Rangda dengan data
+mesh dari retry sukses yang dipilih. Opsi `--outputs` boleh dihilangkan bila
+hanya ingin memasukkan kedua retry; baris Detya yang sudah ada tetap dipertahankan.
+
+Exporter memastikan sumber training/evaluasi cocok dengan snapshot saat retry,
+iterasi model sesuai, dan header vertex/face serta ukuran file mesh sesuai
+catatan retry yang sudah divalidasi. Ini pemeriksaan header/ukuran file,
+bukan pengujian ulang seluruh payload atau penilaian kualitas visual.
+Pertahankan folder asal, `research/summary.json`, Gaussian PLY, `result.json`,
+dan `recon_post.ply` retry di lokasi server yang tercatat.
+
+Buka berkas berikut di `research_results/hasil_radegs_v2/`:
+
+| File | Isi yang diperbarui |
+| --- | --- |
+| `experiment_results_togog_bali_ringkasan.csv` | Ringkasan utama 18 kolom; baris lama dipertahankan dan hasil retry ditambahkan. |
+| `experiment_results_togog_bali_laporan.csv` | Tabel lengkap, termasuk status GT. |
+| `experiment_results_togog_bali_pemulihan_mesh.csv` | Sumber run/retry, blok 8, voxel/depth, durasi mesh, RAM/VRAM, vertex/face, jumlah blok dan ukuran buffer. |
+| `laporan_pemulihan_<waktu>_<id>/` | Laporan gabungan baru, rincian proses, detail JSON, daftar foto, dan gambar perbandingan jika render/referensi asal tersedia. |
+
+Arti status untuk pemilihan data laporan:
+
+- `success`: run pipeline yang berhasil seperti Detya.
+- `success_mesh_recovered`: training dan evaluasi asal dipakai bersama hasil
+  retry mesh yang berhasil. Ini baris pemulihan terpisah, bukan perubahan
+  riwayat run asal menjadi sukses.
+- `failed`: percobaan gagal sebelumnya tetap tersimpan.
+
+Untuk memasukkan hasil berhasil ke analisis, pilih `success` dan
+`success_mesh_recovered`, lalu catat konfigurasi pemulihan pada metodologi.
+Metrik foto tidak dihitung ulang atau diganti split-nya; foto perbandingan
+tetap berasal dari rendering model asal. Vertex mesh tidak digunakan sebagai
+pengganti jumlah Gaussian pada kolom Splats PLY akhir.
+
+CSV teknis dasar `experiment_results_togog_bali.csv`, summary asal dan result.json
+retry tidak diubah oleh ekspor. Karena itu `--resume` pipeline utama tidak
+otomatis melewati baseline gagal hanya karena baris pemulihannya sudah diekspor.
+Menjalankan ekspor lagi memperbarui baris dengan Folder output yang sama,
+tanpa duplikasi. Input retry gagal, belum selesai, berubah sumbernya, atau
+kehilangan mesh akan ditolak.
+
+GT 3D untuk mesh pemulihan tidak dihitung oleh perintah ekspor ini.
+Statusnya `not_run` dengan alasan `mesh_retry_not_evaluated` (atau tetap
+`disabled` jika evaluasi itu dinonaktifkan sejak awal). Nilai GT dari mesh lama
+tidak disalin sebagai hasil mesh baru. Kolom data yang tidak tercatat tetap kosong.

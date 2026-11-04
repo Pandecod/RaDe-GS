@@ -315,3 +315,16 @@ Untuk diagnosis CUDA OOM detya dan crash mesh rangda/tualen, lihat
 Preset khusus memakai penyimpanan foto bawaan `--data_device cpu` sambil
 mempertahankan komputasi CUDA, resolusi, dan parameter algoritma.
 Konfigurasi utama tidak berubah; keberhasilan pada GPU server tetap perlu diuji.
+
+
+## Ekspor hasil mesh retry yang sudah sukses
+
+Exporter menerima --mesh-retries <folder retry> bersama --results-csv.
+Training, metric.py, dan ekstraksi mesh tidak dijalankan ulang.
+Tabel _ringkasan.csv dan _laporan.csv mendapat baris success_mesh_recovered;
+rincian sumber, parameter blok, dan metrik mesh ada di _pemulihan_mesh.csv.
+CSV teknis dasar serta summary run asal tetap menjadi rekaman awal.
+Nilai GT untuk mesh yang baru belum dievaluasi oleh proses ekspor ini.
+
+Perintah lengkap untuk Detya, Tualen dan Rangda ada di
+[Pemulihan: memasukkan hasil retry ke laporan](PEMULIHAN_DETYA_RANGDA_TUALEN.md#memasukkan-hasil-retry-ke-laporan-research_results).
