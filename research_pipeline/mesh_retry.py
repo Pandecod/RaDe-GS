@@ -45,6 +45,9 @@ def _write_report(attempt: Path, result: dict):
         "resolution": settings["resolution"], "num_cluster": settings["num_cluster"],
         "depth_ratio": settings["depth_ratio"],
         "voxel_size": settings["voxel_size"], "max_depth": settings["max_depth"],
+        "mesh_block_resolution": settings.get("block_resolution"),
+        "mesh_active_voxel_blocks": result.get("native_runtime", {}).get("active_voxel_blocks"),
+        "mesh_structure_bytes": result.get("native_runtime", {}).get("mesh_structure_bytes"),
         "mesh_duration_seconds": duration,
         "mesh_duration_minutes": duration / 60 if duration is not None else None,
         "mesh_peak_ram_mb": metrics.get("peak_ram_mb"),
@@ -68,7 +71,7 @@ def _write_report(attempt: Path, result: dict):
 
 def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=30000,
                resolution=2, num_cluster=8, depth_ratio=0.5, voxel_size=0.009,
-               interval=5.0, executor=run_process, analyzer=analyze_mesh):
+               interval=5.0, block_resolution=None, executor=run_process, analyzer=analyze_mesh):
     if script not in ("mesh_extract.py", "mesh_extract_tnt.py"):
         raise ValueError("Choose mesh_extract.py or mesh_extract_tnt.py")
     for name, value in (("max_depth", max_depth), ("voxel_size", voxel_size),
@@ -81,6 +84,11 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
         raise ValueError("depth_ratio must be finite and between 0 and 1")
     if script == "mesh_extract.py" and (voxel_size, max_depth) != (0.009, 8.0):
         raise ValueError("Restored mesh_extract.py uses fixed voxel_size=0.009 and max_depth=8.0")
+    if block_resolution is not None:
+        if script != "mesh_extract.py":
+            raise ValueError("block_resolution is supported only for mesh_extract.py")
+        if block_resolution not in (8, 16):
+            raise ValueError("block_resolution must be 8 or 16")
     model = Path(model_path).resolve()
     for required in (model / "cfg_args",
                      model / f"point_cloud/iteration_{iteration}/point_cloud.ply"):
@@ -90,6 +98,8 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
     settings = dict(script=script, iteration=iteration, resolution=resolution,
                     num_cluster=num_cluster, depth_ratio=depth_ratio,
                     voxel_size=voxel_size, max_depth=max_depth)
+    if script == "mesh_extract.py":
+        settings["block_resolution"] = block_resolution if block_resolution is not None else 16
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]
     attempt = model / "research" / ("mesh_retry_" + run_id)
     attempt.mkdir(parents=True, exist_ok=False)
@@ -99,6 +109,12 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
                "--depth_ratio", str(depth_ratio)]
     if script == "mesh_extract_tnt.py":
         command.extend(["--voxel_size", str(voxel_size), "--max_depth", str(max_depth)])
+    runtime_report = attempt / "native_mesh_runtime.json"
+    if block_resolution is not None:
+        command = [sys.executable, "-u", "-B", "-m",
+                   "research_pipeline.native_mesh_runtime",
+                   "--block-resolution", str(block_resolution),
+                   "--runtime-report", str(runtime_report), "--", *command[4:]]
     result = {
         "kind": "mesh_retry", "scene_name": model.name, "model_path": str(model),
         "attempt_path": str(attempt), "started_utc": utc(), "status": "running",
@@ -112,6 +128,12 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
     stage = "preparation"
     try:
         result["script_sha256"] = hashlib.sha256((REPO / script).read_bytes()).hexdigest()
+        if block_resolution is not None:
+            runtime_script = REPO / "research_pipeline/native_mesh_runtime.py"
+            result["native_runtime_sha256"] = hashlib.sha256(runtime_script.read_bytes()).hexdigest()
+            result["warnings"].append(
+                "Opt-in block layout experiment; surface equivalence to block_resolution=16 "
+                "has not been established. Original run status is retained.")
         if (model / "research/summary.json").is_file():
             try:
                 result["source_summary_snapshot"] = read_json(model / "research/summary.json")
@@ -143,6 +165,11 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
     finally:
         result["finished_utc"] = utc()
         result["retry_wall_seconds"] = perf_counter() - started
+        if runtime_report.is_file():
+            try:
+                result["native_runtime"] = read_json(runtime_report)
+            except (OSError, ValueError) as exc:
+                result["warnings"].append(f"Native runtime metadata could not be read: {exc}")
         _write_report(attempt, result)
     print(f"[MESH RETRY] Status: {result['status']}", flush=True)
     print(f"[MESH RETRY] Report: {attempt / 'result.csv'}", flush=True)
@@ -163,6 +190,8 @@ def main(argv=None):
     parser.add_argument("--resolution", default=2, type=int)
     parser.add_argument("--num-cluster", default=8, type=int)
     parser.add_argument("--depth-ratio", default=0.5, type=float)
+    parser.add_argument("--block-resolution", type=int, choices=(8, 16),
+                        help="Opt-in native allocation layout experiment; default preserves original execution")
     parser.add_argument("--interval", default=5.0, type=float)
     options = vars(parser.parse_args(argv))
     model = options.pop("model")

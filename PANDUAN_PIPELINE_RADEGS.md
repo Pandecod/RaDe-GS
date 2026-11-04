@@ -15,6 +15,9 @@
 Untuk kasus training detya kehabisan VRAM dan mesh rangda/tualen crash, ikuti
 [panduan pemulihan khusus](docs/PEMULIHAN_DETYA_RANGDA_TUALEN.md).
 Preset percobaan detya memakai opsi bawaan `--data_device cpu`; komputasi tetap CUDA.
+Untuk crash mesh tualen, panduan tersebut juga memuat opsi retry `--block-resolution 8`
+yang tetap memakai voxel 0.009 dan depth 8.0; ini percobaan layout memori yang dicatat terpisah,
+belum jaminan keberhasilan atau mesh identik.
 
 Panduan ini berisi langkah operasional Research Pipeline. Kondisi implementasi,
 hasil tes, dan batasan teknis tersedia di
