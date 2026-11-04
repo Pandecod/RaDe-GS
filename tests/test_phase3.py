@@ -25,6 +25,21 @@ class Phase3(unittest.TestCase):
             self.assertEqual(result["final_it_per_sec"], 0.5)
             self.assertIsNone(result["final_loss_ncc"])
             self.assertIn("0.053633,23.4509,65.65,0.9,2.0", csv.read_text())
+    def test_initial_count_accepts_original_spacing_and_both_spellings(self):
+        from research_pipeline.training_parser import read_initial_point_count
+        for text in (
+                "Number of points at initialisation :  235017 [04/11 11:20:00]",
+                "Number of points at initialisation: 235017",
+                (chr(27) + "[32mNumber of points at initialization  :  235017" + chr(27) + "[0m")):
+            with self.subTest(log=text), tempfile.TemporaryDirectory() as tmp:
+                log = Path(tmp) / "training.log"
+                log.write_text(text, encoding="utf-8")
+                before = log.read_bytes()
+                parsed = parse_training(log, Path(tmp) / "metrics.csv", "scene")
+                self.assertEqual(parsed["initial_point_count"], 235017)
+                self.assertEqual(read_initial_point_count(log), 235017)
+                self.assertEqual(log.read_bytes(), before)
+
     def test_unknown_log_keeps_nulls(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "log"

@@ -13,8 +13,20 @@ META = {
     "training_camera_count": r"Loading Training Cameras:\s*(\d+)",
     "test_camera_count": r"Loading Test Cameras:\s*(\d+)",
     "camera_extent": r"cameras extent:\s*(" + NUMBER + ")",
-    "initial_point_count": r"Number of points at initiali[sz]ation:\s*(\d+)",
+    "initial_point_count": r"Number of points at initiali[sz]ation\s*:\s*(\d+)",
 }
+
+def read_initial_point_count(log: Path) -> int | None:
+    """Recover the recorded initialization count without modifying run artifacts."""
+    count = None
+    with log.open(encoding="utf-8", errors="replace") as stream:
+        for raw in stream:
+            line = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw)
+            match = re.search(META["initial_point_count"], line)
+            if match:
+                count = int(match[1])
+    return count
+
 
 def parse_training(log: Path, csv_path: Path, scene_name: str) -> dict:
     metadata = dict.fromkeys(META)

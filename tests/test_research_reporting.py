@@ -87,6 +87,27 @@ class ReportingTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 export([output], destination)
 
+    def test_initial_count_recovered_from_original_log_without_retraining(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output, summary = fixture(root, count=2)
+            (output / "research/profiling/cameras_run.json").unlink()
+            log = output / "research/logs/training.log"
+            log.parent.mkdir()
+            log.write_text("Number of points at initialisation :  235017 [04/11 11:20:00]" + chr(10),
+                           encoding="utf-8")
+            summary_path = output / "research/summary.json"
+            before = summary_path.read_bytes()
+            report = export([output], root / "recovered_report", pairs=1)
+            row = read_csv(report / "tabel_evaluasi.csv")[0]
+            self.assertEqual(row["Gaussian awal"], "235017")
+            self.assertEqual(row["Splats PLY akhir"], "17")
+            details = read_json(report / "detail_laporan.json")["experiments"][0]
+            self.assertEqual(details["data"]["initial_gaussian_count_source"],
+                             "research/logs/training.log")
+            self.assertEqual(summary_path.read_bytes(), before)
+            self.assertIsNone(summary.get("training", {}).get("initial_point_count"))
+
     def test_missing_files_not_invented_and_no_mesh_count_substitution(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

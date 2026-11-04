@@ -218,3 +218,32 @@ training lama dijalankan ulang. Status skipped bukan bukti kesesuaian bentuk 3D.
 
 Dataset, GT, hasil PLY/mesh, dan tabel hasil baru tetap lokal; tidak disertakan
 ke Git melalui folder hasil tersebut.
+
+## Kolom kosong dan pemulihan Gaussian awal
+
+Chamfer, precision, recall, dan F1 kosong ketika GT 3D belum tersedia.
+Precision/recall/F1 juga tetap kosong jika distance_threshold belum ditentukan.
+Status GT menjelaskan mengapa pengukuran dilewati; jangan mengisi nol.
+
+Pembaca log menerima keluaran asli RaDe-GS seperti:
+`Number of points at initialisation :  235017`.
+Jika ringkasan lama belum memiliki Gaussian awal, exporter laporan membaca
+kembali `research/logs/training.log` dan mencatat sumber angkanya di
+`detail_laporan.json`. Angka PLY akhir tidak dipakai sebagai jumlah awal.
+Jika log tidak berisi baris tersebut, kolom tetap kosong.
+
+Setelah pembaruan kode sampai ke server, buat laporan baru untuk hasil yang sudah
+selesai tanpa mengulang training, rendering, atau ekstraksi:
+
+```bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+
+python -B scripts/export_research_report.py \
+  --outputs output/hasil_radegs_v2/togog_bali/dewi_gangga
+```
+
+Gunakan path aktual run (termasuk runs/<timestamp> bila ada).
+Perintah mencetak folder laporan baru berisi tabel_evaluasi.csv dan gambar
+perbandingan. Laporan, summary.json, dan master CSV lama tidak ditimpa;
+laporan gabungan otomatis akan mencatat jumlah awal pada run baru.

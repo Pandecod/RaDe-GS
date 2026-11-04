@@ -242,8 +242,17 @@ def scene_data(output, summary, mem):
         if path.is_file():
             cameras = read_json(path)
     initial = training.get("initial_point_count")
+    initial_source = "summary.training.initial_point_count" if initial is not None else None
     if initial is None:
         initial = cameras.get("initial_active_gaussians")
+        if initial is not None:
+            initial_source = "profiler.initial_active_gaussians"
+    log = output / "research/logs/training.log"
+    if initial is None and log.is_file():
+        from research_pipeline.training_parser import read_initial_point_count
+        initial = read_initial_point_count(log)
+        if initial is not None:
+            initial_source = "research/logs/training.log"
     train_count, test_count = training.get("training_camera_count"), training.get("test_camera_count")
     if train_count is None:
         train_count = len(cameras["cameras"]) if "cameras" in cameras else manifest_counts.get("train")
@@ -256,6 +265,7 @@ def scene_data(output, summary, mem):
         "Gaussian awal": initial, "Splats PLY akhir": splats["count"],
         "Iterasi PLY": splats.get("iteration"), "Folder output": summary.get("output_path", str(output)),
     }, {"photos": photos, "ply": splats,
+        "initial_gaussian_count_source": initial_source,
         "note": "Counts refer to registered camera images, not every raw file or original video frame. "
                 "Camera names are recorded by the renderer and may omit the original extension."}
 
