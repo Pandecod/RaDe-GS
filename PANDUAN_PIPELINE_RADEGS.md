@@ -12,6 +12,10 @@
 
 # Panduan Penggunaan Pipeline RaDe-GS
 
+Untuk kasus training detya kehabisan VRAM dan mesh rangda/tualen crash, ikuti
+[panduan pemulihan khusus](docs/PEMULIHAN_DETYA_RANGDA_TUALEN.md).
+Preset percobaan detya memakai opsi bawaan `--data_device cpu`; komputasi tetap CUDA.
+
 Panduan ini berisi langkah operasional Research Pipeline. Kondisi implementasi,
 hasil tes, dan batasan teknis tersedia di
 [Laporan Kondisi RaDe-GS](LAPORAN_KONDISI_RADEGS.md).

@@ -307,3 +307,11 @@ python -B scripts/export_research_report.py \
 Gunakan nama dan path run yang memang sudah ada. Ekspor ulang run yang sama
 memperbarui barisnya, tanpa menambah duplikat. Run berbeda dengan folder output
 berbeda tetap memiliki baris tersendiri. Data yang tidak tersedia tetap kosong.
+
+## Pemulihan tiga objek yang gagal
+
+Untuk diagnosis CUDA OOM detya dan crash mesh rangda/tualen, lihat
+[Pemulihan detya, rangda, dan tualen](PEMULIHAN_DETYA_RANGDA_TUALEN.md).
+Preset khusus memakai penyimpanan foto bawaan `--data_device cpu` sambil
+mempertahankan komputasi CUDA, resolusi, dan parameter algoritma.
+Konfigurasi utama tidak berubah; keberhasilan pada GPU server tetap perlu diuji.
