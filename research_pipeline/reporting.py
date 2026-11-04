@@ -406,6 +406,18 @@ def sync_report_status(result):
         write_json(path, details)
 
 
+def update_result_tables(directory, master_csv):
+    """Refresh readable result tables; keep original measurements unchanged."""
+    table = master_csv.with_name(master_csv.stem + "_laporan.csv")
+    summary_table = master_csv.with_name(master_csv.stem + "_ringkasan.csv")
+    update_report_table(table, read_csv(directory / "tabel_evaluasi.csv"))
+    # Include earlier report rows when creating or refreshing the short table.
+    rows = [{key: row.get(key) for key in SUMMARY_FIELDS} for row in read_csv(table)]
+    update_report_table(summary_table, rows, fields=SUMMARY_FIELDS)
+    print(f"Tabel evaluasi gabungan: {table}")
+    print(f"Ringkasan seluruh run: {summary_table}")
+
+
 def automatic_report(output, master_csv):
     destination = output / "research" / ("laporan_" +
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8])
@@ -413,13 +425,9 @@ def automatic_report(output, master_csv):
     summary_table = master_csv.with_name(master_csv.stem + "_ringkasan.csv")
     try:
         export([output], destination)
-        update_report_table(table, read_csv(destination / "tabel_evaluasi.csv"))
-        # Include earlier readable report rows on the first upgraded run.
-        rows = [{key: row.get(key) for key in SUMMARY_FIELDS} for row in read_csv(table)]
-        update_report_table(summary_table, rows, fields=SUMMARY_FIELDS)
+        update_result_tables(destination, master_csv)
     except (OSError, ValueError, KeyError, ImportError, RuntimeError) as exc:
         raise ReportGenerationError(exc, destination, table, summary_table) from exc
-    print(f"Ringkasan seluruh run: {summary_table}")
     return {"status": "complete", "directory": str(destination), "table": str(table),
             "summary_table": str(summary_table),
             "resource_table": str(destination / "rincian_proses.csv")}
@@ -505,13 +513,18 @@ def main():
                         help="Output folders containing research/summary.json")
     parser.add_argument("--destination", type=Path,
                         help="New report directory; must not exist")
+    parser.add_argument("--results-csv", type=Path,
+                        help="Base results.csv path: refresh its _laporan.csv and _ringkasan.csv "
+                             "reading views; the technical CSV and source summary are unchanged")
     parser.add_argument("--pairs", type=int, default=5, help="Comparison pairs per scene (default: 5)")
     args = parser.parse_args()
     destination = args.destination or (args.outputs[0] / "research" /
         ("laporan_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]))
     try:
         export(args.outputs, destination, args.pairs)
-    except (OSError, ValueError, KeyError, ImportError) as exc:
+        if args.results_csv is not None:
+            update_result_tables(destination.resolve(), args.results_csv)
+    except (OSError, ValueError, KeyError, ImportError, RuntimeError) as exc:
         parser.exit(1, f"Report failed: {exc}\n")
 
 

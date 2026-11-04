@@ -165,6 +165,67 @@ class ReportingTests(unittest.TestCase):
                 if table.parent == root:
                     self.assertEqual(next(r for r in rows if r["Folder"] == "lama")["Status"], "success")
 
+    def test_manual_export_updates_combined_views_without_duplicates_or_source_changes(self):
+        from research_pipeline.reporting import main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old, _ = fixture(root, name="lama", count=1)
+            results = root / "research_results/results.csv"
+            automatic_report(old, results)
+            # The base technical CSV is an input recording, not a report view.
+            results.write_bytes(b"existing technical measurements")
+            original_recording = results.read_bytes()
+            current, summary = fixture(root, name="dewi_gangga", count=1)
+            (current / "research/profiling/cameras_run.json").unlink()
+            log = current / "research/logs/training.log"
+            log.parent.mkdir()
+            log.write_text("Number of points at initialisation :  235017" + chr(10))
+            summary_path = current / "research/summary.json"
+            before = summary_path.read_bytes()
+            argv = ["export_research_report.py", "--outputs", str(current),
+                    "--results-csv", str(results), "--pairs", "1"]
+            with patch("sys.argv", argv):
+                main()
+            for suffix in ("_laporan.csv", "_ringkasan.csv"):
+                rows = read_csv(results.with_name(results.stem + suffix))
+                self.assertEqual(len(rows), 2)
+                self.assertEqual({row["Folder"] for row in rows}, {"lama", "dewi_gangga"})
+                current_row = next(row for row in rows if row["Folder"] == "dewi_gangga")
+                self.assertEqual(current_row["Gaussian awal"], "235017")
+                self.assertEqual(current_row["PSNR (dB)"], "25.0")
+            self.assertEqual(summary_path.read_bytes(), before)
+            self.assertEqual(results.read_bytes(), original_recording)
+            # Re-exporting a run replaces that row and keeps the other run intact.
+            summary["rendering"]["psnr"] = 26.5
+            write_json(summary_path, summary)
+            before = summary_path.read_bytes()
+            with patch("sys.argv", argv):
+                main()
+            for suffix in ("_laporan.csv", "_ringkasan.csv"):
+                rows = read_csv(results.with_name(results.stem + suffix))
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(next(r for r in rows if r["Folder"] == "dewi_gangga")["PSNR (dB)"],
+                                 "26.5")
+                self.assertEqual(next(r for r in rows if r["Folder"] == "lama")["PSNR (dB)"], "25.0")
+            self.assertEqual(summary_path.read_bytes(), before)
+            self.assertEqual(results.read_bytes(), original_recording)
+
+    def test_manual_export_without_results_option_keeps_combined_tables_unchanged(self):
+        from research_pipeline.reporting import main
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output, _ = fixture(root, count=1)
+            results = root / "results.csv"
+            automatic_report(output, results)
+            tables = [root / "results_laporan.csv", root / "results_ringkasan.csv"]
+            snapshots = [table.read_bytes() for table in tables]
+            destination = root / "manual_report"
+            with patch("sys.argv", ["export_research_report.py", "--outputs", str(output),
+                                    "--destination", str(destination), "--pairs", "1"]):
+                main()
+            self.assertTrue((destination / "ringkasan_hasil.csv").is_file())
+            self.assertEqual([table.read_bytes() for table in tables], snapshots)
+
     def test_initial_count_recovered_from_original_log_without_retraining(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

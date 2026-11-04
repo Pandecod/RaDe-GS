@@ -240,13 +240,16 @@ conda activate radegs
 cd /home/pande/projects/RaDe-GS
 
 python -B scripts/export_research_report.py \
-  --outputs output/hasil_radegs_v2/togog_bali/dewi_gangga
+  --outputs output/hasil_radegs_v2/togog_bali/dewi_gangga \
+  --results-csv research_results/hasil_radegs_v2/experiment_results_togog_bali.csv
 ```
 
 Gunakan path aktual run (termasuk runs/<timestamp> bila ada).
 Perintah mencetak folder laporan baru berisi tabel_evaluasi.csv dan gambar
-perbandingan. Laporan, summary.json, dan master CSV lama tidak ditimpa;
-laporan gabungan otomatis akan mencatat jumlah awal pada run baru.
+perbandingan. Opsi --results-csv juga memperbarui tabel gabungan _laporan.csv
+dan _ringkasan.csv, termasuk Gaussian awal yang berhasil dibaca kembali dari log.
+Baris run dicocokkan melalui Folder output; objek lain tetap tersimpan.
+Laporan lama, summary.json, dan CSV pengukuran teknis asal tetap disimpan.
 
 ## Membaca laporan ringkas dan rincian proses
 
@@ -286,6 +289,21 @@ menyatakan tahap itu gagal. Gunakan kolom Status pada ringkasan untuk status run
 Jika waktu terlihat sebagai `########` di Excel, lebarkan kolomnya.
 
 Untuk hasil yang sudah selesai, perintah `export_research_report.py` di atas
-langsung membuat berkas laporan baru ini tanpa mengulang training. Export manual
-membuat laporan di folder baru dan tidak memperbarui CSV gabungan. Path laporan
-baru dicetak di terminal; hasil lama tetap disimpan.
+langsung membuat berkas laporan baru ini tanpa mengulang training.
+Dengan `--results-csv`, tabel gabungan `_laporan.csv` dan `_ringkasan.csv` ikut
+diperbarui. Path yang diberikan adalah nilai `results.csv` dari YAML;
+CSV teknis dengan nama dasar tersebut tetap menjadi rekaman asal dan tidak
+ditulis ulang oleh exporter. Tanpa opsi itu, ekspor hanya membuat laporan lokal
+di folder baru. Lokasi laporan dan tabel gabungan dicetak di terminal.
+
+Untuk Tanks and Temples, misalnya:
+
+```bash
+python -B scripts/export_research_report.py \
+  --outputs output/hasil_radegs_v2/tanks_temples/horse \
+  --results-csv research_results/hasil_radegs_v2/experiment_results_tanks_temples.csv
+```
+
+Gunakan nama dan path run yang memang sudah ada. Ekspor ulang run yang sama
+memperbarui barisnya, tanpa menambah duplikat. Run berbeda dengan folder output
+berbeda tetap memiliki baris tersendiri. Data yang tidak tersedia tetap kosong.
