@@ -19,6 +19,79 @@ FIELDS = [
     "Status GT 3D", "Alasan GT dilewati", "Chamfer (satuan rekonstruksi)",
     "Precision geometri", "Recall geometri", "F1 geometri", "File GT 3D",
 ]
+# Preserve the saved evaluation/GT table; provide a shorter main reading view.
+SUMMARY_FIELDS = FIELDS[:18]
+RESOURCE_FIELDS = [
+    "Folder", "Metode", "Tahap", "Ketersediaan data", "Durasi (menit)",
+    "RAM puncak proses (MiB)", "RAM rata-rata proses (MiB)",
+    "VRAM puncak proses (MiB)", "VRAM rata-rata proses (MiB)",
+    "Peak VRAM seluruh GPU saat training (GiB)", "File sampel resource",
+    "Folder output",
+]
+
+
+def resource_rows(summary, mem):
+    """Readable stage measurements; unavailable process VRAM stays unknown."""
+    rows = []
+    for key, label in (("training", "Training"), ("rendering", "Rendering"),
+                       ("mesh_extraction", "Ekstraksi mesh")):
+        stage = summary.get(key, {})
+        seconds = numeric(stage.get("duration_seconds"))
+        row = {
+            "Folder": summary["scene_name"], "Metode": "RaDe-GS", "Tahap": label,
+            "Durasi (menit)": seconds / 60 if seconds is not None else None,
+            "RAM puncak proses (MiB)": numeric(stage.get("peak_ram_mb")),
+            "RAM rata-rata proses (MiB)": numeric(stage.get("average_ram_mb")),
+            "VRAM puncak proses (MiB)": numeric(stage.get("peak_vram_mb")),
+            "VRAM rata-rata proses (MiB)": numeric(stage.get("average_vram_mb")),
+            "Peak VRAM seluruh GPU saat training (GiB)":
+                mem["gpu_total_peak_gib"] if key == "training" else None,
+            "File sampel resource": stage.get("resource_csv"),
+            "Folder output": summary.get("output_path"),
+        }
+        recorded = any(row[field] is not None for field in RESOURCE_FIELDS[4:10])
+        row["Ketersediaan data"] = "Tercatat" if recorded else "Tidak tercatat"
+        rows.append(row)
+    return rows
+
+
+def write_table(path, fields, rows):
+    """Write an additional reading view without altering the source values."""
+    with path.open("x", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: round(value, 6) if isinstance(value, float) else value
+                             for key in fields if (value := row.get(key)) is not None})
+
+
+REPORT_GUIDE = """# Petunjuk membaca laporan
+
+Buka ringkasan_hasil.csv terlebih dahulu. Satu baris adalah satu run objek.
+Kolom Folder adalah nama objek; Folder output membedakan lokasi setiap run.
+
+| File/folder | Isi |
+| --- | --- |
+| ringkasan_hasil.csv | 18 kolom utama: waktu, objek, metrik, VRAM GPU, waktu training, foto, dan splats. |
+| rincian_proses.csv | Waktu, RAM, dan VRAM untuk training, rendering, dan ekstraksi mesh. |
+| tabel_evaluasi.csv | Tabel evaluasi lengkap, termasuk status dan hasil GT 3D. |
+| detail_laporan.json | Data teknis, sumber angka, dan lokasi berkas pembanding. |
+| *_daftar_foto.csv | Nama foto kamera, split, ukuran, dan pasangan gambar. |
+| 01_<objek>/ dan seterusnya | Foto referensi di kiri dan hasil render di kanan. |
+
+Waktu ringkasan adalah waktu pencatatan hasil, bukan waktu mulai training.
+Training (menit) mencakup persiapan dan penyimpanan dalam proses training.
+Durasi rendering terpisah dari waktu menjalankan metric.py.
+RAM adalah sampel RSS proses beserta proses anak; MiB = 1024**2 byte.
+VRAM proses hanya diisi jika monitor menyediakan datanya.
+Peak VRAM seluruh GPU mencakup aplikasi lain; GiB = 1024**3 byte.
+Angka puncak berasal dari sampel, sehingga puncak di antara sampel bisa terlewat.
+Kolom kosong berarti tidak tersedia, bukan nol. Tidak tercatat bukan status gagal.
+Nilai train berasal dari foto latih; nilai test berasal dari foto yang dipisahkan.
+Status success menunjukkan tahapan wajib selesai, bukan jaminan kualitas visual.
+Jika Excel menampilkan ######## pada waktu, lebarkan kolomnya.
+CSV teknis utama tetap tersimpan sesuai results.csv pada konfigurasi.
+"""
 
 
 def read_json(path):
@@ -274,20 +347,20 @@ PHOTO_FIELDS = ["Split", "Iterasi", "Nama foto kamera", "File render", "File ref
                 "Lebar piksel", "Tinggi piksel", "Pasangan tersedia", "Sumber nama"]
 
 
-def update_report_table(path, rows):
+def update_report_table(path, rows, fields=FIELDS):
     """Atomic table for sequential pipeline runs, keyed by output folder."""
     from research_pipeline.utils import atomic_write
     previous = read_csv(path) if path.exists() else []
     if path.exists():
         with path.open(encoding="utf-8-sig", newline="") as stream:
-            if next(csv.reader(stream), []) != FIELDS:
+            if next(csv.reader(stream), []) != fields:
                 raise ValueError(f"Report CSV schema mismatch: {path}")
     indexed = {row["Folder output"]: row for row in previous}
     for row in rows:
         indexed[row["Folder output"]] = row
     def write(stream):
         stream.write("\ufeff")
-        writer = csv.DictWriter(stream, fieldnames=FIELDS)
+        writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         writer.writerows(indexed.values())
     atomic_write(path, write)
@@ -295,9 +368,10 @@ def update_report_table(path, rows):
 
 class ReportGenerationError(RuntimeError):
     """Keep report locations available when a later export step fails."""
-    def __init__(self, error, directory, table):
+    def __init__(self, error, directory, table, summary_table):
         super().__init__(str(error))
-        self.reporting = {"directory": str(directory), "table": str(table)}
+        self.reporting = {"directory": str(directory), "table": str(table),
+                          "summary_table": str(summary_table)}
 
 
 def sync_report_status(result):
@@ -307,10 +381,13 @@ def sync_report_status(result):
     directory = Path(report["directory"]) if report.get("directory") else None
     tables = []
     if directory is not None:
-        tables.append(directory / "tabel_evaluasi.csv")
+        tables.extend(((directory / "tabel_evaluasi.csv", FIELDS),
+                       (directory / "ringkasan_hasil.csv", SUMMARY_FIELDS)))
     if report.get("table"):
-        tables.append(Path(report["table"]))
-    for table in tables:
+        tables.append((Path(report["table"]), FIELDS))
+    if report.get("summary_table"):
+        tables.append((Path(report["summary_table"]), SUMMARY_FIELDS))
+    for table, fields in tables:
         if table.is_file():
             changed = []
             for row in read_csv(table):
@@ -318,7 +395,7 @@ def sync_report_status(result):
                     row["Status"] = result["status"]
                     changed.append(row)
             if changed:
-                update_report_table(table, changed)
+                update_report_table(table, changed, fields=fields)
     if directory is not None and (directory / "detail_laporan.json").is_file():
         path = directory / "detail_laporan.json"
         details = read_json(path)
@@ -333,12 +410,19 @@ def automatic_report(output, master_csv):
     destination = output / "research" / ("laporan_" +
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8])
     table = master_csv.with_name(master_csv.stem + "_laporan.csv")
+    summary_table = master_csv.with_name(master_csv.stem + "_ringkasan.csv")
     try:
         export([output], destination)
         update_report_table(table, read_csv(destination / "tabel_evaluasi.csv"))
+        # Include earlier readable report rows on the first upgraded run.
+        rows = [{key: row.get(key) for key in SUMMARY_FIELDS} for row in read_csv(table)]
+        update_report_table(summary_table, rows, fields=SUMMARY_FIELDS)
     except (OSError, ValueError, KeyError, ImportError, RuntimeError) as exc:
-        raise ReportGenerationError(exc, destination, table) from exc
-    return {"status": "complete", "directory": str(destination), "table": str(table)}
+        raise ReportGenerationError(exc, destination, table, summary_table) from exc
+    print(f"Ringkasan seluruh run: {summary_table}")
+    return {"status": "complete", "directory": str(destination), "table": str(table),
+            "summary_table": str(summary_table),
+            "resource_table": str(destination / "rincian_proses.csv")}
 
 
 def export(outputs, destination, pairs=5):
@@ -394,11 +478,14 @@ def export(outputs, destination, pairs=5):
             "data": data, "photo_inventory": str(photo_file),
         })
         print(f"{summary['scene_name']}: comparison images = {review['status']}")
-    with (destination / "tabel_evaluasi.csv").open("x", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=FIELDS)
-        writer.writeheader()
-        for _, _, _, row, _ in prepared:
-            writer.writerow({k: round(v, 6) if isinstance(v, float) else v for k, v in row.items()})
+    write_table(destination / "tabel_evaluasi.csv", FIELDS,
+                [row for _, _, _, row, _ in prepared])
+    write_table(destination / "ringkasan_hasil.csv", SUMMARY_FIELDS,
+                [row for _, _, _, row, _ in prepared])
+    write_table(destination / "rincian_proses.csv", RESOURCE_FIELDS,
+                [row for _, summary, mem, _, _ in prepared
+                 for row in resource_rows(summary, mem)])
+    (destination / "PETUNJUK_LAPORAN.md").write_text(REPORT_GUIDE, encoding="utf-8")
     with (destination / "detail_laporan.json").open("x", encoding="utf-8") as stream:
         json.dump({"notes": [
             "Timestamp is summary recording time, not training start.",
@@ -408,6 +495,7 @@ def export(outputs, destination, pairs=5):
             "One row per supplied output; this export does not modify the pipeline master CSV.",
         ], "experiments": details}, stream, indent=2, ensure_ascii=False, allow_nan=False)
     print(f"Report: {destination}")
+    print(f"Buka ringkasan utama: {destination / 'ringkasan_hasil.csv'}")
     return destination
 
 

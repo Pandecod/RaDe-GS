@@ -247,3 +247,45 @@ Gunakan path aktual run (termasuk runs/<timestamp> bila ada).
 Perintah mencetak folder laporan baru berisi tabel_evaluasi.csv dan gambar
 perbandingan. Laporan, summary.json, dan master CSV lama tidak ditimpa;
 laporan gabungan otomatis akan mencatat jumlah awal pada run baru.
+
+## Membaca laporan ringkas dan rincian proses
+
+Mulai dari tabel **18 kolom** yang mengikuti urutan contoh laporan:
+waktu ringkasan, Folder (nama objek), Metode, PSNR, SSIM, LPIPS, Peak VRAM
+seluruh GPU, Training (menit), split evaluasi, jumlah gambar evaluasi, status,
+jumlah foto terdaftar, foto training, foto test, Gaussian awal, splats PLY akhir,
+iterasi PLY, dan folder output.
+
+Untuk hasil pipeline otomatis, tabel ringkasan seluruh run berada di:
+
+- `research_results/hasil_radegs_v2/experiment_results_togog_bali_ringkasan.csv`
+- `research_results/hasil_radegs_v2/experiment_results_tanks_temples_ringkasan.csv`
+
+Setiap folder `research/laporan_<timestamp>/` juga berisi:
+
+| Berkas | Untuk membaca |
+| --- | --- |
+| `ringkasan_hasil.csv` | Tabel utama 18 kolom; buka ini terlebih dahulu. |
+| `rincian_proses.csv` | Satu baris per tahap training, rendering, dan ekstraksi mesh: durasi, RAM, VRAM, serta lokasi sampel resource. |
+| `tabel_evaluasi.csv` | Tabel lengkap dengan status GT 3D dan metrik geometri. |
+| `detail_laporan.json` | Sumber angka dan data teknis laporan. |
+| `PETUNJUK_LAPORAN.md` | Penjelasan file, satuan, dan arti kolom kosong. |
+| `*_daftar_foto.csv` dan folder `01_<objek>/` | Daftar foto dan gambar perbandingan referensi dengan render. |
+
+CSV teknis yang dikonfigurasi melalui `results.csv` dan tabel `_laporan.csv`
+tetap tersedia. Ringkasan tambahan tidak mengganti kunci data teknis atau nilai
+metrik. Pada run otomatis pertama setelah pembaruan, tabel `_ringkasan.csv` juga
+memuat baris lama yang sudah ada di `_laporan.csv`.
+
+RAM proses dan VRAM proses dinyatakan dalam MiB; total GPU dalam GiB.
+RAM adalah RSS proses beserta proses anak. Total VRAM GPU mencakup aplikasi
+lain dan tidak digunakan untuk mengisi VRAM proses yang tidak tersedia.
+Durasi rendering terpisah dari eksekusi `metric.py`.
+Kolom kosong berarti tidak tersedia; keterangan `Tidak tercatat` tidak
+menyatakan tahap itu gagal. Gunakan kolom Status pada ringkasan untuk status run.
+Jika waktu terlihat sebagai `########` di Excel, lebarkan kolomnya.
+
+Untuk hasil yang sudah selesai, perintah `export_research_report.py` di atas
+langsung membuat berkas laporan baru ini tanpa mengulang training. Export manual
+membuat laporan di folder baru dan tidak memperbarui CSV gabungan. Path laporan
+baru dicetak di terminal; hasil lama tetap disimpan.

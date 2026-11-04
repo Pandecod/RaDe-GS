@@ -13,6 +13,7 @@ from PIL import Image
 from research_pipeline.config import DEFAULTS
 from research_pipeline.reporting import (
     export, read_csv, read_json, memory_info, ply_count, update_report_table,
+    automatic_report, SUMMARY_FIELDS,
 )
 from research_pipeline.runner import run_batch
 from research_pipeline.scene_discovery import Scene
@@ -86,6 +87,83 @@ class ReportingTests(unittest.TestCase):
             self.assertEqual(details["memory"]["pytorch_allocated_peak_gib"], 1)
             with self.assertRaises(FileExistsError):
                 export([output], destination)
+
+    def test_main_table_and_stage_details_keep_scopes_and_missing_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output, summary = fixture(root, count=2)
+            summary["training"].update(peak_ram_mb=24576, average_ram_mb=19456,
+                                       peak_vram_mb=None, average_vram_mb=None)
+            summary["rendering"].update(duration_seconds=60, peak_ram_mb=20480,
+                                        average_ram_mb=18432, peak_vram_mb=4096,
+                                        average_vram_mb=3072)
+            summary["mesh_extraction"] = {"voxel_size": .009}
+            source = output / "research/summary.json"
+            write_json(source, summary)
+            before = source.read_bytes()
+            destination = export([output], root / "report")
+            main = read_csv(destination / "ringkasan_hasil.csv")[0]
+            complete = read_csv(destination / "tabel_evaluasi.csv")[0]
+            self.assertEqual(list(main), [
+                "Waktu ringkasan (UTC+08)", "Folder", "Metode", "PSNR (dB)", "SSIM",
+                "LPIPS", "Peak VRAM seluruh GPU (GiB)", "Training (menit)",
+                "Split evaluasi", "Jumlah gambar evaluasi", "Status",
+                "Jumlah foto terdaftar", "Foto training", "Foto test", "Gaussian awal",
+                "Splats PLY akhir", "Iterasi PLY", "Folder output",
+            ])
+            self.assertEqual(main, {key: complete[key] for key in main})
+            self.assertEqual(main["Split evaluasi"], "train")
+            stages = {row["Tahap"]: row for row in read_csv(destination / "rincian_proses.csv")}
+            training, rendering, mesh = [stages[k] for k in ("Training", "Rendering", "Ekstraksi mesh")]
+            self.assertEqual(training["RAM puncak proses (MiB)"], "24576.0")
+            self.assertEqual(training["RAM rata-rata proses (MiB)"], "19456.0")
+            self.assertEqual(training["VRAM puncak proses (MiB)"], "")
+            self.assertEqual(training["VRAM rata-rata proses (MiB)"], "")
+            self.assertEqual(training["Peak VRAM seluruh GPU saat training (GiB)"], "2.0")
+            self.assertEqual(rendering["Durasi (menit)"], "1.0")
+            self.assertEqual(rendering["VRAM puncak proses (MiB)"], "4096.0")
+            self.assertEqual(rendering["Peak VRAM seluruh GPU saat training (GiB)"], "")
+            self.assertEqual(mesh["Ketersediaan data"], "Tidak tercatat")
+            self.assertEqual(mesh["Durasi (menit)"], "")
+            self.assertEqual(source.read_bytes(), before)
+            guide = (destination / "PETUNJUK_LAPORAN.md").read_text(encoding="utf-8")
+            self.assertIn("Buka ringkasan_hasil.csv", guide)
+            self.assertIn("rincian_proses.csv", guide)
+
+    def test_upgraded_summary_keeps_old_runs_and_reconciles_partial_failure(self):
+        from research_pipeline import reporting
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old, _ = fixture(root, name="lama", count=1)
+            export([old], root / "old_report")
+            update_report_table(root / "results_laporan.csv",
+                                read_csv(root / "old_report/tabel_evaluasi.csv"))
+            current, _ = fixture(root, name="baru", count=1)
+            automatic_report(current, root / "results.csv")
+            rows = read_csv(root / "results_ringkasan.csv")
+            self.assertEqual({row["Folder"] for row in rows}, {"lama", "baru"})
+            original = reporting.update_report_table
+            failed_once = False
+            def fail_after_write(path, rows, **kwargs):
+                nonlocal failed_once
+                original(path, rows, **kwargs)
+                if path.name == "results_ringkasan.csv" and not failed_once:
+                    failed_once = True
+                    raise OSError("summary table write failed")
+            with patch("research_pipeline.reporting.update_report_table", side_effect=fail_after_write):
+                with self.assertRaises(reporting.ReportGenerationError) as caught:
+                    automatic_report(current, root / "results.csv")
+                reporting.sync_report_status({
+                    "output_path": str(current), "status": "failed",
+                    "reporting": {**caught.exception.reporting, "error": str(caught.exception)},
+                })
+            report = Path(caught.exception.reporting["directory"])
+            for table in (root / "results_laporan.csv", root / "results_ringkasan.csv",
+                          report / "tabel_evaluasi.csv", report / "ringkasan_hasil.csv"):
+                rows = read_csv(table)
+                self.assertEqual(next(r for r in rows if r["Folder"] == "baru")["Status"], "failed")
+                if table.parent == root:
+                    self.assertEqual(next(r for r in rows if r["Folder"] == "lama")["Status"], "success")
 
     def test_initial_count_recovered_from_original_log_without_retraining(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -168,6 +246,11 @@ class ReportingTests(unittest.TestCase):
                 self.assertEqual(run_batch(config, [scene]), 0)
                 self.assertEqual(run_batch(config, [scene]), 0)
             rows = read_csv(root / "results_laporan.csv")
+            main_rows = read_csv(root / "results_ringkasan.csv")
+            self.assertEqual(len(main_rows), 2)
+            self.assertEqual([r["Folder output"] for r in main_rows],
+                             [r["Folder output"] for r in rows])
+            self.assertEqual(list(main_rows[0]), SUMMARY_FIELDS)
             self.assertEqual(len(rows), 2)
             self.assertNotEqual(rows[0]["Folder output"], rows[1]["Folder output"])
             for row in rows:
@@ -227,9 +310,9 @@ class ReportingTests(unittest.TestCase):
             config["results"]["csv"] = str(root / "results.csv")
             original = reporting.update_report_table
             failed_once = False
-            def fail_after_write(path, rows):
+            def fail_after_write(path, rows, **kwargs):
                 nonlocal failed_once
-                original(path, rows)
+                original(path, rows, **kwargs)
                 if path.name == "results_laporan.csv" and not failed_once:
                     failed_once = True
                     raise OSError("simulated failure after report table write")
@@ -243,6 +326,7 @@ class ReportingTests(unittest.TestCase):
             self.assertEqual(summary["failed_stage"], "report_generation")
             folder = Path(summary["reporting"]["directory"])
             self.assertEqual(read_csv(folder / "tabel_evaluasi.csv")[0]["Status"], "failed")
+            self.assertEqual(read_csv(folder / "ringkasan_hasil.csv")[0]["Status"], "failed")
             self.assertEqual(read_csv(root / "results_laporan.csv")[0]["Status"], "failed")
             self.assertEqual(read_csv(root / "results.csv")[0]["status"], "failed")
             detail = read_json(folder / "detail_laporan.json")["experiments"][0]

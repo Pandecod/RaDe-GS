@@ -2,6 +2,8 @@
 > Training utama 1920 + --eval + --enable_allocator_gc; metric.py asli pada test; mesh_extract.py
 > kembali ke implementasi awal dengan voxel 0.009 dan depth 8.0.
 > Output baru: output/hasil_radegs_v2/<dataset>/<objek>; tabel: research_results/hasil_radegs_v2/.
+> Buka `<nama_csv>_ringkasan.csv` untuk 18 kolom utama; rincian waktu/RAM/VRAM
+> ada di `research/laporan_<timestamp>/rincian_proses.csv`.
 > GT 3D diperiksa setelah mesh; pembanding yang belum tersedia dicatat sebagai skipped.
 > Perintah profiling internal, depth 7.0, dan evaluator khusus di bawah adalah
 > catatan historis, bukan perintah workflow aktif.
