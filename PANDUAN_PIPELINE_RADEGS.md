@@ -1,3 +1,11 @@
+> **Workflow aktif diperbarui:** gunakan [panduan RaDe-GS asli](docs/WORKFLOW_RADEGS_ASLI.md).
+> Training utama 1920 + --eval + --enable_allocator_gc; metric.py asli pada test; mesh_extract.py
+> kembali ke implementasi awal dengan voxel 0.009 dan depth 8.0.
+> Output baru: output/hasil_radegs_v2/<dataset>/<objek>; tabel: research_results/hasil_radegs_v2/.
+> GT 3D diperiksa setelah mesh; pembanding yang belum tersedia dicatat sebagai skipped.
+> Perintah profiling internal, depth 7.0, dan evaluator khusus di bawah adalah
+> catatan historis, bukan perintah workflow aktif.
+
 # Panduan Penggunaan Pipeline RaDe-GS
 
 Panduan ini berisi langkah operasional Research Pipeline. Kondisi implementasi,

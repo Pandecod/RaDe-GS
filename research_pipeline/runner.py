@@ -160,11 +160,15 @@ def execute_scene(config: dict, scene: Scene, output: Path,
         "resolution": config["mesh"]["resolution"],
         "num_cluster": config["mesh"]["num_cluster"],
         "depth_ratio": config["mesh"]["depth_ratio"],
-        "script": config["mesh"].get("script", "mesh_extract_tnt.py"),
+        "script": config["mesh"].get("script", "mesh_extract.py"),
         "voxel_size": config["mesh"]["voxel_size"],
         "max_depth": config["mesh"]["max_depth"],
     }
     geometry_config = {
+        "status": "not_run" if config["geometry_evaluation"]["enabled"] else "disabled",
+        "skip_reason": None,
+        "ground_truth_path": None,
+        "evaluator": "research_pipeline.geometry_evaluator",
         "chamfer_distance": None,
         "precision": None,
         "recall": None,
@@ -238,6 +242,8 @@ def execute_scene(config: dict, scene: Scene, output: Path,
                 # discard useful PSNR, SSIM, and LPIPS results.
                 stage = "image_metrics"
                 try:
+                    from research_pipeline.image_evaluator import prepare_native_evaluation, collect_native_metrics
+                    prepare_native_evaluation(output)
                     process = executor(
                         result["commands"][stage],
                         output / "research/logs/image_metrics.log",
@@ -247,12 +253,12 @@ def execute_scene(config: dict, scene: Scene, output: Path,
                         raise StageFailure(
                             stage, f"Image evaluation exited with code {process.returncode}"
                         )
-                    image_metrics = read_json(output / "research/image_metrics.json")
+                    image_metrics = collect_native_metrics(output, scene.name)
                     if image_metrics.get("image_count", 0) <= 0:
                         raise StageFailure(stage, "Image evaluation produced no image metrics")
                     result["rendering"].update({
                         key: image_metrics.get(key)
-                        for key in ("ssim", "psnr", "lpips", "split", "method")
+                        for key in ("ssim", "psnr", "lpips", "split", "method", "evaluator")
                     })
                     result["rendering"]["evaluation_image_count"] = image_metrics["image_count"]
                     result["warnings"].extend(image_metrics.get("warnings", []))
@@ -285,27 +291,13 @@ def execute_scene(config: dict, scene: Scene, output: Path,
                 output / "recon_post.ply", mesh_process_metrics, scene.name
             )}
         if config["geometry_evaluation"]["enabled"]:
-            from research_pipeline.utils import read_json
-
             stage = "geometry_evaluation"
-            gt_path = Path(result["commands"][stage][
-                result["commands"][stage].index("--ground-truth") + 1
-            ])
-            if not gt_path.is_file():
-                raise StageFailure(stage, f"Ground truth does not exist: {gt_path}")
-            process = executor(
-                result["commands"][stage],
-                output / "research/logs/geometry_evaluation.log",
-                config["resource_monitor"]["interval_seconds"],
-            )
-            if process.returncode:
-                raise StageFailure(stage,
-                                   f"Geometry evaluation exited with code {process.returncode}")
-            result["geometry"] = {
-                **geometry_config,
-                **read_json(output / "research/geometry_metrics.json"),
-            }
+            from research_pipeline.geometry_stage import evaluate_geometry_stage
+            result["geometry"] = evaluate_geometry_stage(
+                config, scene.name, output, result["commands"][stage], executor)
             result["warnings"].extend(result["geometry"].get("warnings", []))
+            if result["geometry"]["status"] == "failed":
+                raise StageFailure(stage, result["geometry"]["error_message"])
         if result["failed_stage"] is None:
             result["status"] = "success"
     except StageFailure as exc:

@@ -38,6 +38,10 @@ def _run_config(config_path: Path, args) -> int:
                     config, scene.path, output, args.start_from).items():
                 if stage == "mesh_extraction":
                     print("RESOURCE GUARD: " + ("enabled" if config["resource_guard"]["enabled"] else "disabled"))
+                if stage == "geometry_evaluation":
+                    gt = Path(command[command.index("--ground-truth") + 1])
+                    policy = "skip" if config["geometry_evaluation"]["skip_missing_gt"] else "fail"
+                    print(f"GT 3D: {gt}; policy when missing: {policy}")
                 label = {
                     "colmap": "COLMAP",
                     "training": "TRAIN",

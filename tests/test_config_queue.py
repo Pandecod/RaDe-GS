@@ -81,14 +81,14 @@ class ConfigQueueTests(unittest.TestCase):
         source = PurePosixPath(config["dataset"]["root"])
         self.assertTrue(source.is_absolute())
         self.assertEqual(source.name, "tanks_temples")
-        self.assertEqual(config["output"]["root"], "output/tanks_temples")
-        self.assertEqual(config["results"]["csv"], "research_results/experiment_results_tanks_temples.csv")
+        self.assertEqual(config["output"]["root"], "output/hasil_radegs_v2/tanks_temples")
+        self.assertEqual(config["results"]["csv"], "research_results/hasil_radegs_v2/experiment_results_tanks_temples.csv")
         self.assertEqual(config["training"], main_config["training"])
         expected_mesh = copy.deepcopy(main_config["mesh"])
         expected_mesh["max_depth"] = 8.0
-        expected_mesh["script"] = "mesh_extract_tnt.py"
+        expected_mesh["script"] = "mesh_extract.py"
         self.assertEqual(config["mesh"], expected_mesh)
-        self.assertEqual(main_config["mesh"]["max_depth"], 7.0)
+        self.assertEqual(main_config["mesh"]["max_depth"], 8.0)
         self.assertNotIn("wisnu", config["output"]["root"])
         self.assertNotIn("wisnu", config["results"]["csv"])
 

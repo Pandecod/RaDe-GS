@@ -1,4 +1,4 @@
-﻿"""Record an isolated mesh retry using an existing trained Gaussian model."""
+"""Record an isolated mesh retry using an existing trained Gaussian model."""
 from __future__ import annotations
 
 import argparse
@@ -79,6 +79,8 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
         raise ValueError("iteration, resolution and num_cluster must be positive")
     if not math.isfinite(depth_ratio) or not 0 <= depth_ratio <= 1:
         raise ValueError("depth_ratio must be finite and between 0 and 1")
+    if script == "mesh_extract.py" and (voxel_size, max_depth) != (0.009, 8.0):
+        raise ValueError("Restored mesh_extract.py uses fixed voxel_size=0.009 and max_depth=8.0")
     model = Path(model_path).resolve()
     for required in (model / "cfg_args",
                      model / f"point_cloud/iteration_{iteration}/point_cloud.ply"):
@@ -94,8 +96,9 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
     command = [sys.executable, "-u", "-B", str(REPO / script),
                "-m", str(attempt), "--iteration", str(iteration),
                "-r", str(resolution), "--num_cluster", str(num_cluster),
-               "--depth_ratio", str(depth_ratio), "--voxel_size", str(voxel_size),
-               "--max_depth", str(max_depth)]
+               "--depth_ratio", str(depth_ratio)]
+    if script == "mesh_extract_tnt.py":
+        command.extend(["--voxel_size", str(voxel_size), "--max_depth", str(max_depth)])
     result = {
         "kind": "mesh_retry", "scene_name": model.name, "model_path": str(model),
         "attempt_path": str(attempt), "started_utc": utc(), "status": "running",

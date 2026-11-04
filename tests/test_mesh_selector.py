@@ -39,29 +39,26 @@ class Array:
 
 
 class MeshSelectorTests(unittest.TestCase):
-    def test_each_script_gets_parameters_and_its_own_cli_validation(self):
+    def test_original_cli_and_tnt_cli_are_not_interchanged(self):
         config = copy.deepcopy(DEFAULTS)
-        for script in ("mesh_extract.py", "mesh_extract_tnt.py"):
-            config["mesh"]["script"] = script
-            config["mesh"]["voxel_size"] = .012
-            config["mesh"]["max_depth"] = 6.25
-            config["mesh"]["extra_args"] = []
-            validate(config)
-            command = commands(config, Path("data"), Path("output"))["mesh_extraction"]
-            self.assertEqual(command[1], script)
-            args = repository_parser("mesh", script).parse_args(command[2:])
-            self.assertEqual((args.voxel_size, args.max_depth), (.012, 6.25))
-        config["mesh"]["script"] = "mesh_extract.py"
-        config["mesh"]["extra_args"] = ["--use_depth_filter"]
-        with self.assertRaises(ValueError):
-            validate(config)
-        config["mesh"]["extra_args"] = []
-        config["mesh"]["script"] = "../other.py"
-        with self.assertRaises(ValueError):
-            validate(config)
+        validate(config)
+        command = commands(config, Path("data"), Path("out"))["mesh_extraction"]
+        repository_parser("mesh", "mesh_extract.py").parse_args(command[2:])
+        self.assertNotIn("--voxel_size", command)
+        for key, value in (("voxel_size", .002), ("max_depth", 7.0)):
+            bad = copy.deepcopy(config)
+            bad["mesh"][key] = value
+            with self.assertRaises(ValueError):
+                validate(bad)
+        config["mesh"].update(script="mesh_extract_tnt.py", voxel_size=.012, max_depth=6.25)
+        validate(config)
+        command = commands(config, Path("data"), Path("out"))["mesh_extraction"]
+        args = repository_parser("mesh", "mesh_extract_tnt.py").parse_args(command[2:])
+        self.assertEqual((args.voxel_size, args.max_depth), (.012, 6.25))
 
     def test_historical_tnt_id_is_preserved_but_vbg_is_a_distinct_experiment(self):
         config = copy.deepcopy(DEFAULTS)
+        config["mesh"]["script"] = "mesh_extract_tnt.py"
         old_mesh = dict(config["mesh"])
         old_mesh.pop("script")
         payload = {"scene_name": "ngawasari", "dataset": config["dataset"],
@@ -97,7 +94,7 @@ class MeshSelectorTests(unittest.TestCase):
             self.assertIn("python mesh_extract.py", printed)
             self.assertNotIn("python mesh_extract_tnt.py", printed)
             self.assertIn("--resolution 1920", printed)
-            self.assertIn("--voxel_size 0.009 --max_depth 7.0", printed)
+            self.assertNotIn("--max_depth", printed)
             self.assertEqual(before, sorted(str(p) for p in root.rglob("*")))
 
     def test_pipeline_executes_selected_vbg_and_records_its_script(self):
@@ -106,7 +103,7 @@ class MeshSelectorTests(unittest.TestCase):
             scene = Scene("ngawasari", make_scene(root / "data", "ngawasari"))
             output = root / "out"
             config = copy.deepcopy(DEFAULTS)
-            config["mesh"].update(script="mesh_extract.py", max_depth=7.)
+            config["mesh"].update(script="mesh_extract.py", max_depth=8.)
             config["resource_guard"]["enabled"] = False
             config["rendering"]["enabled"] = False
             config["image_metrics"]["enabled"] = False
@@ -123,56 +120,8 @@ class MeshSelectorTests(unittest.TestCase):
             self.assertEqual(seen, ["train.py", "mesh_extract.py"])
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["mesh_extraction"]["script"], "mesh_extract.py")
-            self.assertEqual(result["mesh_extraction"]["max_depth"], 7.)
+            self.assertEqual(result["mesh_extraction"]["max_depth"], 8.)
 
-    def test_vbg_function_really_uses_passed_voxel_and_both_depth_limits(self):
-        tree = ast.parse((REPO / "mesh_extract.py").read_text(encoding="utf-8"))
-        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "extract_mesh")
-        captures, calls, written = {}, [], []
-        class Mesh:
-            def to_legacy(self):
-                return self
-        class Volume:
-            def __init__(self, **kwargs):
-                captures.update(kwargs)
-            def compute_unique_block_coordinates(self, *args):
-                calls.append(("blocks", args[-1]))
-                return []
-            def integrate(self, *args):
-                calls.append(("integrate", args[-1]))
-            def extract_triangle_mesh(self, **kwargs):
-                return Mesh()
-        class Image:
-            def __init__(self, value):
-                pass
-            def to(self, device):
-                return self
-        camera = SimpleNamespace(Fx=2., Fy=2., Cx=1., Cy=1., gt_mask=None,
-                                 world_view_transform=Array(np.eye(4)))
-        o3d = SimpleNamespace(
-            core=SimpleNamespace(Device=lambda value: value, Tensor=lambda value: value),
-            t=SimpleNamespace(geometry=SimpleNamespace(VoxelBlockGrid=Volume, Image=Image)),
-            io=SimpleNamespace(write_triangle_mesh=lambda path, mesh: written.append(Path(path).name)))
-        scope = {
-            "math": math, "np": np, "os": __import__("os"),
-            "o3d": o3d, "o3c": SimpleNamespace(float32=None),
-            "torch": SimpleNamespace(float32=None, tensor=lambda *a, **k: None,
-                                     clamp=lambda value, **k: value,
-                                     cuda=SimpleNamespace(empty_cache=lambda: None)),
-            "GaussianModel": lambda *a: None,
-            "Scene": lambda *a, **k: SimpleNamespace(getTrainCameras=lambda: [camera]),
-            "render": lambda *a, **k: {"render": Array(np.zeros((3, 2, 2))),
-                                       "median_depth": Array(np.ones((1, 2, 2)))},
-            "post_process_mesh": lambda mesh, count: mesh,
-        }
-        exec(compile(ast.Module(body=[function], type_ignores=[]), "mesh_extract.py", "exec"), scope)
-        dataset = SimpleNamespace(sh_degree=3, kernel_size=0., depth_ratio=.5, model_path="output")
-        scope["extract_mesh"](dataset, None, 30000, 8, .012, 6.25)
-        self.assertEqual(captures["voxel_size"], .012)
-        self.assertEqual(calls, [("blocks", 6.25), ("integrate", 6.25)])
-        self.assertEqual(written, ["recon_raw.ply", "recon_post.ply"])
-        with self.assertRaises(ValueError):
-            scope["extract_mesh"](dataset, None, 30000, 8, .012, 0.)
 
 
 if __name__ == "__main__":

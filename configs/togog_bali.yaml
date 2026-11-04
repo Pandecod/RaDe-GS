@@ -1,13 +1,13 @@
-# Konfigurasi penelitian utama: training 1920, 30000 iterasi, allocator GC, mesh VoxelBlockGrid.
+# Training 1920, allocator GC, --eval, metric.py asli; mesh_extract.py (voxel 0.009, depth 8.0).
 project:
   name: RaDe-GS
   dataset: Dataset Togog Bali
 dataset:
   root: /home/pande/projects/RaDe-GS/dataset/togog_bali
 output:
-  root: output/togog_bali
+  root: output/hasil_radegs_v2/togog_bali
 results:
-  csv: /home/pande/projects/RaDe-GS/research_results/experiment_results.csv
+  csv: research_results/hasil_radegs_v2/experiment_results_togog_bali.csv
 colmap:
   executable: colmap
   camera_model: OPENCV
@@ -19,21 +19,7 @@ training:
     - "30000"
     - "--resolution"
     - "1920"
-    - "--profile_training"
-    - "--profile_from"
-    - "1800"
-    - "--profile_until"
-    - "30000"
-    - "--profile_interval"
-    - "100"
-    - "--profile_control_samples"
-    - "--profile_gpu_interval"
-    - "1"
-    - "--checkpoint_iterations"
-    - "3000"
-    - "7000"
-    - "15000"
-    - "25000"
+    - "--eval"
 rendering:
   enabled: true
   extra_args: []
@@ -46,7 +32,7 @@ mesh:
   num_cluster: 8
   depth_ratio: 0.5
   voxel_size: 0.009
-  max_depth: 7.0
+  max_depth: 8.0
   extra_args: []
 resource_monitor:
   interval_seconds: 5.0
@@ -59,8 +45,9 @@ resource_guard:
   check_interval_seconds: 10
   max_wait_seconds: 300
 geometry_evaluation:
-  enabled: false
-  gt_root: null
+  enabled: true
+  gt_root: dataset/ground_truth/togog_bali
+  skip_missing_gt: true
   sample_points: 100000
   distance_threshold: null
   seed: 0

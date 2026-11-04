@@ -1,4 +1,4 @@
-﻿"""CPU checks for recorded, isolated mesh retries."""
+"""CPU checks for recorded, isolated mesh retries."""
 import csv
 import json
 from pathlib import Path
@@ -40,7 +40,8 @@ class MeshRetryTests(unittest.TestCase):
             def execute(command, log, interval):
                 commands.append(command)
                 self.assertEqual(interval, 5)
-                self.assertEqual(command[command.index("--max_depth") + 1], "20.0")
+                self.assertNotIn("--max_depth", command)
+                self.assertNotIn("--voxel_size", command)
                 self.assertNotIn("train.py", command)
                 log.write_text("mesh completed", encoding="utf-8")
                 (log.parent / "recon_post.ply").write_bytes(b"new mesh")
@@ -54,7 +55,7 @@ class MeshRetryTests(unittest.TestCase):
                 return {"vertex_count": 100, "face_count": 80, "file_size_mb": 1}
 
             with patch("research_pipeline.mesh_retry._prepare_model"):
-                result = retry_mesh(model, max_depth=20.0, executor=execute, analyzer=analyze)
+                result = retry_mesh(model, max_depth=8.0, executor=execute, analyzer=analyze)
             self.assertEqual(result["status"], "success")
             self.assertEqual(result["source_summary_snapshot"]["training"]["duration_seconds"], 1234)
             attempt = Path(result["attempt_path"])
@@ -89,7 +90,7 @@ class MeshRetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             model = self.make_model(Path(tmp))
             with patch("research_pipeline.mesh_retry._prepare_model"):
-                result = retry_mesh(model, max_depth=20, executor=lambda *a: ProcessResult(0, 5))
+                result = retry_mesh(model, max_depth=8, executor=lambda *a: ProcessResult(0, 5))
             self.assertEqual(result["status"], "failed")
             self.assertEqual(result["failed_stage"], "mesh_validation")
             self.assertIn("Final mesh was not created", result["error_message"])
@@ -98,10 +99,10 @@ class MeshRetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             model = self.make_model(Path(tmp))
             with patch("research_pipeline.mesh_retry._prepare_model", side_effect=OSError("link unavailable")):
-                failed = retry_mesh(model, max_depth=20)
+                failed = retry_mesh(model, max_depth=8)
             self.assertEqual(failed["failed_stage"], "preparation")
             with patch("research_pipeline.mesh_retry._prepare_model"):
-                interrupted = retry_mesh(model, max_depth=20, executor=lambda *a: (_ for _ in ()).throw(KeyboardInterrupt()))
+                interrupted = retry_mesh(model, max_depth=8, executor=lambda *a: (_ for _ in ()).throw(KeyboardInterrupt()))
             self.assertEqual(interrupted["status"], "interrupted")
             self.assertEqual(interrupted["exit_code"], 130)
             self.assertNotEqual(failed["attempt_path"], interrupted["attempt_path"])
@@ -111,11 +112,11 @@ class MeshRetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             model = self.make_model(Path(tmp))
             before = list((model / "research").iterdir())
-            for depth in (0, -1, float("nan"), float("inf")):
+            for depth in (0, -1, 7.0, 20.0, float("nan"), float("inf")):
                 with self.assertRaises(ValueError):
                     retry_mesh(model, max_depth=depth)
             with self.assertRaises(ValueError):
-                retry_mesh(model, max_depth=20, iteration=7000)
+                retry_mesh(model, max_depth=8, iteration=7000)
             self.assertEqual(list((model / "research").iterdir()), before)
 
 

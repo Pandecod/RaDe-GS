@@ -47,8 +47,8 @@ class Phase1(unittest.TestCase):
             self.assertEqual([s.name for s in scenes], ["togog_arjuna", "togog_ganesha"])
             self.assertFalse(validation_errors(scenes[0]))
             cmd = commands(config, scenes[0].path, root / "outputs")["mesh_extraction"]
-            self.assertEqual(cmd[1:], ["mesh_extract_tnt.py", "-m", str(root / "outputs"),
-                "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])
+            self.assertEqual(cmd[1:], ["mesh_extract.py", "-m", str(root / "outputs"),
+                "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5"])
             for mode in ("--list-scenes", "--dry-run"):
                 with patch("subprocess.Popen", side_effect=AssertionError("No processes allowed")), contextlib.redirect_stdout(io.StringIO()) as out:
                     self.assertEqual(main(["--config", str(cfg), mode]), 0)
@@ -103,7 +103,7 @@ class Phase1(unittest.TestCase):
 
     def test_shipped_gc_configs_dry_run_with_selected_mesh_without_model_imports(self):
         from research_pipeline.config import REPO, load_config, repository_parser
-        for name, width, max_depth in (("togog_bali.yaml", 1920, 7.0),
+        for name, width, max_depth in (("togog_bali.yaml", 1920, 8.0),
                                        ("togog_bali_1600.yaml", 1600, 8.0),
                                        ("togog_bali_full_gc.yaml", 1024, 8.0)):
             with self.subTest(config=name), tempfile.TemporaryDirectory() as tmp:
@@ -119,9 +119,9 @@ class Phase1(unittest.TestCase):
                     expected_mesh["max_depth"] = max_depth
                     expected_mesh["script"] = "mesh_extract.py"
                     self.assertEqual(config["mesh"], expected_mesh)
-                    self.assertEqual(config["output"]["root"], "output/togog_bali")
+                    self.assertEqual(config["output"]["root"], "output/hasil_radegs_v2/togog_bali")
                     self.assertEqual(config["results"]["csv"],
-                                     "/home/pande/projects/RaDe-GS/research_results/experiment_results.csv")
+                                     "research_results/hasil_radegs_v2/experiment_results_togog_bali.csv")
                     self.assertNotEqual(config["output"], reference["output"])
                     self.assertNotEqual(config["results"], reference["results"])
                 scene = make_scene(root / "dataset", "togog_tualen")
@@ -130,12 +130,14 @@ class Phase1(unittest.TestCase):
                 config["results"]["csv"] = str(root / "results.csv")
                 built = commands(config, scene, root / "output/togog_tualen")
                 train = repository_parser("training").parse_args(built["training"][2:])
+                self.assertTrue(train.eval)
                 self.assertTrue(train.enable_allocator_gc)
+                self.assertNotIn("--profile_training", built["training"])
                 self.assertEqual((train.iterations, train.resolution), (30000, width))
                 mesh = repository_parser("mesh", config["mesh"]["script"]).parse_args(built["mesh_extraction"][2:])
                 self.assertEqual(built["mesh_extraction"][1], config["mesh"]["script"])
-                self.assertEqual((mesh.resolution, mesh.num_cluster, mesh.depth_ratio,
-                                  mesh.voxel_size, mesh.max_depth), (2, 8, 0.5, 0.009, max_depth))
+                self.assertEqual((mesh.resolution, mesh.num_cluster, mesh.depth_ratio), (2, 8, 0.5))
+                self.assertEqual((config["mesh"]["voxel_size"], config["mesh"]["max_depth"]), (0.009, max_depth))
                 # Default -1 selects the latest saved model, including short custom runs.
                 self.assertEqual(mesh.iteration, -1)
                 cfg = root / "config.yaml"
@@ -147,8 +149,10 @@ class Phase1(unittest.TestCase):
                                            "--start-from", "training", "--dry-run"]), 0)
                 printed = out.getvalue()
                 self.assertIn("--enable_allocator_gc", printed)
+                self.assertIn("--eval", printed)
+                self.assertIn("python metric.py -m", printed)
                 self.assertIn("python " + config["mesh"]["script"], printed)
-                self.assertIn(f"--voxel_size 0.009 --max_depth {max_depth}", printed)
+                self.assertNotIn("--max_depth", printed)
                 self.assertEqual(before, sorted(str(p) for p in root.rglob("*")))
                 self.assertNotIn("torch", sys.modules)
                 self.assertNotIn("open3d", sys.modules)

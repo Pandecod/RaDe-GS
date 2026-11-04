@@ -11,6 +11,13 @@ from research_pipeline.utils import write_json
 from test_research_pipeline import make_raw_scene, make_scene
 
 
+
+def write_native(output):
+    values = {"SSIM": 0.9, "PSNR": 20.0, "LPIPS": 0.1}
+    write_json(output / "results.json", {"ours_30000": values})
+    write_json(output / "per_view.json", {"ours_30000": {
+        key: {"00000.png": value} for key, value in values.items()}})
+
 class PipelineFlow(unittest.TestCase):
     def test_colmap_start_prepares_dataset_then_trains(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -29,6 +36,7 @@ class PipelineFlow(unittest.TestCase):
                     stages.append("colmap")
                     make_scene(scene.path.parent, scene.name)
                 elif command[1] == "train.py":
+                    (output / "cfg_args").write_text("Namespace(eval=True)")
                     stages.append("training")
                     log_path.write_text("30000/30000 [1it/s, Loss=0.1]\n",
                                         encoding="utf-8")
@@ -53,14 +61,15 @@ class PipelineFlow(unittest.TestCase):
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_path.write_text("fixture\n", encoding="utf-8")
                 if command[1] == "train.py":
+                    (output / "cfg_args").write_text("Namespace(eval=True)")
                     stages.append("training")
                 elif command[1] == "render.py":
                     stages.append("rendering")
                     for kind in ("renders", "gt"):
-                        folder = output / "train/ours_30000" / kind
+                        folder = output / "test/ours_30000" / kind
                         folder.mkdir(parents=True, exist_ok=True)
                         (folder / "00000.png").write_bytes(b"fixture")
-                elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
+                elif command[1] == "metric.py":
                     stages.append("image_metrics")
                     return ProcessResult(1, 1.0)
                 else:
@@ -88,26 +97,23 @@ class PipelineFlow(unittest.TestCase):
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_path.write_text("fixture\n", encoding="utf-8")
                 if command[1] == "train.py":
+                    (output / "cfg_args").write_text("Namespace(eval=True)")
                     stage = "training"
                     log_path.write_text("30000/30000 [1it/s, Loss=0.1]\n", encoding="utf-8")
                 elif command[1] == "render.py":
                     stage = "rendering"
                     for kind in ("renders", "gt"):
-                        folder = output / "train/ours_30000" / kind
+                        folder = output / "test/ours_30000" / kind
                         folder.mkdir(parents=True, exist_ok=True)
                         (folder / "00000.png").write_bytes(b"fixture")
-                elif command[1] == "mesh_extract_tnt.py":
+                elif command[1] == "mesh_extract.py":
                     stage = "mesh_extraction"
-                    self.assertEqual(command[-10:], ["-r", "2", "--num_cluster", "8",
-                                                    "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])
+                    self.assertEqual(command[-6:], ["-r", "2", "--num_cluster", "8",
+                                                    "--depth_ratio", "0.5"])
                     (output / "recon_post.ply").write_bytes(b"fixture")
-                elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
+                elif command[1] == "metric.py":
                     stage = "image_metrics"
-                    write_json(output / "research/image_metrics.json", {
-                        "ssim": 0.9, "psnr": 20.0, "lpips": 0.1,
-                        "image_count": 1, "split": "train", "method": "ours_30000",
-                        "warnings": [],
-                    })
+                    write_native(output)
                 else:
                     stage = "unknown"
                 stages.append(stage)
@@ -124,7 +130,7 @@ class PipelineFlow(unittest.TestCase):
             self.assertEqual(result["training"]["final_iteration"], 30000)
             self.assertEqual(result["rendering"]["image_count"], 1)
             self.assertEqual(result["mesh_extraction"]["depth_ratio"], 0.5)
-            self.assertEqual(result["mesh_extraction"]["script"], "mesh_extract_tnt.py")
+            self.assertEqual(result["mesh_extraction"]["script"], "mesh_extract.py")
             self.assertEqual(result["mesh_extraction"]["voxel_size"], 0.009)
             self.assertEqual(result["mesh_extraction"]["max_depth"], 8.0)
 
@@ -141,20 +147,19 @@ class PipelineFlow(unittest.TestCase):
                 commands_seen.append(command)
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 if command[1] == "train.py":
+                    (output / "cfg_args").write_text("Namespace(eval=True)")
                     log_path.write_text("Training complete.\n", encoding="utf-8")
                     return ProcessResult(0, 1.0)
                 elif command[1] == "render.py":
                     # Rendering selalu jalan; buat folder renders agar render_statistics tidak error
-                    (output / "train/ours_30000/renders").mkdir(parents=True, exist_ok=True)
-                    (output / "train/ours_30000/gt").mkdir(parents=True, exist_ok=True)
+                    (output / "test/ours_30000/renders").mkdir(parents=True, exist_ok=True)
+                    (output / "test/ours_30000/gt").mkdir(parents=True, exist_ok=True)
+                    for kind in ("renders", "gt"):
+                        (output / "test/ours_30000" / kind / "00000.png").write_bytes(b"fixture")
                     log_path.write_text("Rendering complete.\n", encoding="utf-8")
                     return ProcessResult(0, 1.0)
-                elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
-                    write_json(output / "research/image_metrics.json", {
-                        "ssim": 0.9, "psnr": 20.0, "lpips": 0.1,
-                        "image_count": 1, "split": "train", "method": "ours_30000",
-                        "warnings": [],
-                    })
+                elif command[1] == "metric.py":
+                    write_native(output)
                     return ProcessResult(0, 1.0)
                 log_path.write_text("CUDA out of memory\n", encoding="utf-8")
                 return ProcessResult(1, 1.0)
@@ -163,8 +168,8 @@ class PipelineFlow(unittest.TestCase):
             self.assertEqual(result["failed_stage"], "mesh_extraction_oom")
             self.assertEqual(result["mesh_extraction"]["duration_seconds"], 1.0)
             self.assertEqual(len(commands_seen), 4)
-            self.assertEqual(commands_seen[3][-10:], ["-r", "2", "--num_cluster", "8",
-                                                     "--depth_ratio", "0.5", "--voxel_size", "0.009", "--max_depth", "8.0"])
+            self.assertEqual(commands_seen[3][-6:], ["-r", "2", "--num_cluster", "8",
+                                                     "--depth_ratio", "0.5"])
 
     def test_optional_geometry_runs_after_mesh(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,23 +188,20 @@ class PipelineFlow(unittest.TestCase):
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_path.write_text("fixture\n", encoding="utf-8")
                 if command[1] == "train.py":
+                    (output / "cfg_args").write_text("Namespace(eval=True)")
                     stages.append("training")
                 elif command[1] == "render.py":
                     stages.append("rendering")
                     for kind in ("renders", "gt"):
-                        folder = output / "train/ours_30000" / kind
+                        folder = output / "test/ours_30000" / kind
                         folder.mkdir(parents=True, exist_ok=True)
                         (folder / "00000.png").write_bytes(b"fixture")
-                elif command[1] == "mesh_extract_tnt.py":
+                elif command[1] == "mesh_extract.py":
                     stages.append("mesh_extraction")
                     (output / "recon_post.ply").write_bytes(b"fixture")
-                elif command[1:3] == ["-m", "research_pipeline.image_evaluator"]:
+                elif command[1] == "metric.py":
                     stages.append("image_metrics")
-                    write_json(output / "research/image_metrics.json", {
-                        "ssim": 0.9, "psnr": 20.0, "lpips": 0.1,
-                        "image_count": 1, "split": "train", "method": "ours_30000",
-                        "warnings": [],
-                    })
+                    write_native(output)
                 else:
                     stages.append("geometry_evaluation")
                     write_json(output / "research/geometry_metrics.json", {

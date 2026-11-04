@@ -1,4 +1,7 @@
-﻿# Pipeline GC + TNT — 27 Oktober 2026
+> **Pembaruan:** lihat [workflow aktif RaDe-GS asli](WORKFLOW_RADEGS_ASLI.md).
+> Allocator GC aktif kembali; rincian profiling internal dan mesh modifikasi di bawah adalah riwayat percobaan.
+
+# Pipeline GC + TNT — 27 Oktober 2026
 
 Pipeline lokal sekarang memakai pengaturan yang berhasil pada server:
 training allocator GC, kemudian rendering, metrik gambar, dan ekstraksi

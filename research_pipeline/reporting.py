@@ -16,6 +16,8 @@ FIELDS = [
     "Split evaluasi", "Jumlah gambar evaluasi", "Status",
     "Jumlah foto terdaftar", "Foto training", "Foto test", "Gaussian awal",
     "Splats PLY akhir", "Iterasi PLY", "Folder output",
+    "Status GT 3D", "Alasan GT dilewati", "Chamfer (satuan rekonstruksi)",
+    "Precision geometri", "Recall geometri", "F1 geometri", "File GT 3D",
 ]
 
 
@@ -59,7 +61,28 @@ def memory_info(output):
         "note": "GPU total includes other applications; a sampled maximum, not process VRAM.",
     }
     if not manifests:
-        info["note"] += " No profiler manifest available."
+        summary_path = output / "research/summary.json"
+        summary = read_json(summary_path) if summary_path.is_file() else {}
+        resource = summary.get("training", {}).get("resource_csv")
+        if not resource:
+            info["note"] += " No training resource CSV available."
+            return info
+        # Also support copied Linux output folders inspected on Windows.
+        filename = str(resource).replace(chr(92), "/").rsplit("/", 1)[-1]
+        local = output / "research/logs" / filename
+        resource_path = local if local.is_file() else Path(resource)
+        if not resource_path.is_file():
+            info["note"] += " Training resource CSV is missing."
+            return info
+        rows = [r for r in read_csv(resource_path) if r.get("device_status") == "available"]
+        devices = {r.get("gpu_uuid") or r.get("gpu_index") for r in rows}
+        if len(devices) == 1:
+            info["gpu_total_peak_gib"] = maximum(rows, "device_vram_used_mb", 1024)
+            info["gpu_samples"] = sum(numeric(r.get("device_vram_used_mb")) is not None for r in rows)
+        elif len(devices) > 1:
+            info["note"] += " Multiple GPUs: total peak withheld until the training GPU is identified."
+        info["gpu_csv"] = str(resource_path)
+        info["note"] += " External training monitor; no internal training profiler."
         return info
     manifest = read_json(manifests[0])
     run_id = manifest["run_id"]
@@ -330,6 +353,16 @@ def export(outputs, destination, pairs=5):
         ]))
         counts, data = scene_data(output, summary, mem)
         row.update(counts)
+        geometry = summary.get("geometry", {})
+        row.update({
+            "Status GT 3D": geometry.get("status"),
+            "Alasan GT dilewati": geometry.get("skip_reason"),
+            "Chamfer (satuan rekonstruksi)": numeric(geometry.get("chamfer_distance")),
+            "Precision geometri": numeric(geometry.get("precision")),
+            "Recall geometri": numeric(geometry.get("recall")),
+            "F1 geometri": numeric(geometry.get("f1_score")),
+            "File GT 3D": geometry.get("ground_truth_path"),
+        })
         prepared.append((output, summary, mem, row, data))
     destination = destination.resolve()
     destination.mkdir(parents=True, exist_ok=False)
@@ -347,6 +380,7 @@ def export(outputs, destination, pairs=5):
             "original_output_path": summary.get("output_path"),
             "experiment_id": summary.get("experiment_id"),
             "table_row": row, "memory": mem, "comparison": review,
+            "geometry": summary.get("geometry", {}),
             "data": data, "photo_inventory": str(photo_file),
         })
         print(f"{summary['scene_name']}: comparison images = {review['status']}")

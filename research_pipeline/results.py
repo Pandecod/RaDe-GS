@@ -31,6 +31,7 @@ FIELDNAMES = [
     "mesh_file_size_mb", "chamfer_distance", "precision", "recall", "f1_score",
     "geometry_sample_points", "distance_threshold", "git_commit", "git_dirty",
     "python_version", "pytorch_version", "cuda_version", "gpu_name", "driver_version",
+    "geometry_status", "geometry_skip_reason", "geometry_gt_path", "geometry_evaluator",
 ]
 
 
@@ -159,6 +160,10 @@ def csv_row(result: dict) -> dict:
         "precision": geometry.get("precision"),
         "recall": geometry.get("recall"),
         "f1_score": geometry.get("f1_score"),
+        "geometry_status": geometry.get("status"),
+        "geometry_skip_reason": geometry.get("skip_reason"),
+        "geometry_gt_path": geometry.get("ground_truth_path"),
+        "geometry_evaluator": geometry.get("evaluator"),
         "geometry_sample_points": geometry.get("sample_points"),
         "distance_threshold": geometry.get("distance_threshold"),
         **{key: reproducible.get(key) for key in (
@@ -215,4 +220,3 @@ def successful_ids(path: Path) -> set[str]:
 def write_summary(result: dict) -> None:
     path = Path(result["output_path"]) / "research/summary.json"
     write_json(path, result)
-

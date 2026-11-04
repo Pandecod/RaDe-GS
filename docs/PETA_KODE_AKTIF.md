@@ -1,3 +1,6 @@
+> **Pembaruan:** lihat [workflow aktif RaDe-GS asli](WORKFLOW_RADEGS_ASLI.md).
+> Allocator GC aktif kembali; rincian profiling internal dan mesh modifikasi di bawah adalah riwayat percobaan.
+
 # Peta kode aktif RaDe-GS
 
 Diperbarui 30 Oktober 2026. Panduan ini membedakan kode utama, alat pemantauan,

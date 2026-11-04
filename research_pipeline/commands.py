@@ -23,22 +23,26 @@ def commands(config: dict, dataset: Path, output: Path,
         result["rendering"] = [sys.executable, "render.py", "-m", str(output),
                                *config["rendering"]["extra_args"]]
         if config["image_metrics"]["enabled"]:
-            result["image_metrics"] = [sys.executable, "-m", "research_pipeline.image_evaluator",
-                                        "--output", str(output), "--scene-name", dataset.name]
+            result["image_metrics"] = [sys.executable, "metric.py", "-m", str(output)]
     if config["mesh"]["enabled"]:
-        result["mesh_extraction"] = [sys.executable, config["mesh"].get("script", "mesh_extract_tnt.py"), "-m", str(output),
-                                     "-r", "2", "--num_cluster", "8", "--depth_ratio", "0.5",
-                                     "--voxel_size", str(config["mesh"]["voxel_size"]),
-                                     "--max_depth", str(config["mesh"]["max_depth"]),
-                                     *config["mesh"]["extra_args"]]
+        mesh = config["mesh"]
+        script = mesh.get("script", "mesh_extract.py")
+        if script == "mesh_extract.py" and (mesh["voxel_size"], mesh["max_depth"]) != (0.009, 8.0):
+            raise ValueError("Restored mesh_extract.py uses fixed voxel_size=0.009 and max_depth=8.0")
+        command = [sys.executable, script, "-m", str(output),
+                   "-r", str(mesh["resolution"]), "--num_cluster", str(mesh["num_cluster"]),
+                   "--depth_ratio", str(mesh["depth_ratio"])]
+        if script == "mesh_extract_tnt.py":
+            command.extend(["--voxel_size", str(mesh["voxel_size"]),
+                            "--max_depth", str(mesh["max_depth"])])
+        result["mesh_extraction"] = [*command, *mesh["extra_args"]]
     if config["geometry_evaluation"]["enabled"]:
         geometry = config["geometry_evaluation"]
-        gt_root = Path(geometry["gt_root"]).expanduser()
-        if not gt_root.is_absolute():
-            gt_root = Path(__file__).resolve().parents[1] / gt_root
+        from research_pipeline.ground_truth import ground_truth_path
+        gt_path = ground_truth_path(config, dataset.name)
         command = [sys.executable, "-m", "research_pipeline.geometry_evaluator",
                    "--reconstruction", str(output / "recon_post.ply"),
-                   "--ground-truth", str(gt_root.resolve() / f"{dataset.name}.ply"),
+                   "--ground-truth", str(gt_path),
                    "--sample-points", str(geometry["sample_points"]),
                    "--seed", str(geometry["seed"]), "--scene-name", dataset.name,
                    "--output", str(output)]

@@ -12,20 +12,20 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULTS = {
     "project": {"name": "radegs_togog_bali", "dataset": "Dataset Togog Bali"},
     "dataset": {"root": "/home/pande/dataset_togog_bali"},
-    "output": {"root": "output/togog_bali"},
-    "results": {"csv": "research_results/experiment_results.csv"},
+    "output": {"root": "output/hasil_radegs_v2/togog_bali"},
+    "results": {"csv": "research_results/hasil_radegs_v2/experiment_results_togog_bali.csv"},
     "colmap": {"executable": "colmap", "camera_model": "OPENCV", "use_gpu": True},
-    "training": {"extra_args": []},
+    "training": {"extra_args": ["--enable_allocator_gc", "--resolution", "1920", "--eval"]},
     "rendering": {"enabled": True, "extra_args": []},
     "image_metrics": {"enabled": True},
-    "mesh": {"enabled": True, "script": "mesh_extract_tnt.py", "resolution": 2, "num_cluster": 8,
+    "mesh": {"enabled": True, "script": "mesh_extract.py", "resolution": 2, "num_cluster": 8,
              "depth_ratio": 0.5, "voxel_size": 0.009, "max_depth": 8.0, "extra_args": []},
     "resource_monitor": {"interval_seconds": 5.0},
     "resource_guard": {"enabled": True, "cooldown_before_mesh_seconds": 5,
                        "minimum_free_ram_gb": 4, "minimum_free_vram_mb": 1024,
                        "wait_if_memory_low": True, "check_interval_seconds": 10,
                        "max_wait_seconds": 300},
-    "geometry_evaluation": {"enabled": False, "gt_root": None,
+    "geometry_evaluation": {"enabled": False, "gt_root": None, "skip_missing_gt": True,
                             "sample_points": 100000, "distance_threshold": None,
                             "seed": 0},
 }
@@ -107,6 +107,8 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Verified mesh parameters are fixed: -r 2 --num_cluster 8 --depth_ratio 0.5")
     if mesh["script"] not in ("mesh_extract.py", "mesh_extract_tnt.py"):
         raise ValueError("mesh.script must be mesh_extract.py or mesh_extract_tnt.py")
+    if mesh["script"] == "mesh_extract.py" and (mesh["voxel_size"], mesh["max_depth"]) != (0.009, 8.0):
+        raise ValueError("Restored mesh_extract.py uses fixed voxel_size=0.009 and max_depth=8.0")
     for stage in ("training", "rendering", "mesh"):
         extras = config[stage]["extra_args"]
         if not isinstance(extras, list) or any(not isinstance(a, str) for a in extras):
@@ -118,6 +120,11 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"Invalid {stage}.extra_args: {exc}") from exc
         if unknown:
             raise ValueError(f"Unknown {stage} arguments: {unknown}")
+        if config["image_metrics"]["enabled"] and config["rendering"]["enabled"]:
+            if stage == "training" and not parsed.eval:
+                raise ValueError("Native test metrics require training.extra_args to include --eval")
+            if stage == "rendering" and parsed.skip_test:
+                raise ValueError("Native test metrics cannot use --skip_test")
         # Reject overrides even when an attached short form or abbreviation is used.
         for action in parser._actions:
             forbidden = {"source_path", "model_path"}
