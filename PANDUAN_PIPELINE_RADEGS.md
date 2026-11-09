@@ -1,9 +1,15 @@
+> **Pusat laporan terpadu:** lihat [panduan pengumpulan laporan](docs/PUSAT_LAPORAN_PENELITIAN.md).
+> Paket baru berisi tabel dan foto di research_results/hasil_radegs_v2/laporan/;
+> buka research_results/hasil_radegs_v2/MULAI_DI_SINI.html setelah ekspor.
+> Hasil lama dapat dikumpulkan tanpa training ulang dengan scripts/collect_research_reports.py.
+> PNG perbandingan kini memakai label besar; jalankan ulang collector untuk memperbarui gambar lama.
+
 > **Workflow aktif diperbarui:** gunakan [panduan RaDe-GS asli](docs/WORKFLOW_RADEGS_ASLI.md).
 > Training utama 1920 + --eval + --enable_allocator_gc; metric.py asli pada test; mesh_extract.py
 > kembali ke implementasi awal dengan voxel 0.009 dan depth 8.0.
 > Output baru: output/hasil_radegs_v2/<dataset>/<objek>; tabel: research_results/hasil_radegs_v2/.
 > Buka `<nama_csv>_ringkasan.csv` untuk 18 kolom utama; rincian waktu/RAM/VRAM
-> ada di `research/laporan_<timestamp>/rincian_proses.csv`.
+> ada di paket terpusat `laporan/<dataset>/<paket>/rincian_proses.csv`.
 > Ekspor hasil lama: tambahkan `--results-csv <path results.csv dari YAML>`
 > agar tabel gabungan `_laporan.csv` dan `_ringkasan.csv` ikut diperbarui.
 > GT 3D diperiksa setelah mesh; pembanding yang belum tersedia dicatat sebagai skipped.

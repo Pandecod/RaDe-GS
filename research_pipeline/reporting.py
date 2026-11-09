@@ -33,12 +33,16 @@ RESOURCE_FIELDS = [
 def resource_rows(summary, mem):
     """Readable stage measurements; unavailable process VRAM stays unknown."""
     rows = []
-    for key, label in (("training", "Training"), ("rendering", "Rendering"),
-                       ("mesh_extraction", "Ekstraksi mesh")):
+    stages = [("training", "Training"), ("rendering", "Rendering"),
+              ("mesh_extraction", "Ekstraksi mesh")]
+    stages[:0] = [(key, label) for key, label in (
+        ("scaffold_training", "Training Scaffold-GS"),
+        ("scaffold_export", "Ekspor anchor Scaffold-GS")) if key in summary]
+    for key, label in stages:
         stage = summary.get(key, {})
         seconds = numeric(stage.get("duration_seconds"))
         row = {
-            "Folder": summary["scene_name"], "Metode": "RaDe-GS", "Tahap": label,
+            "Folder": summary["scene_name"], "Metode": summary.get("method", "RaDe-GS"), "Tahap": label,
             "Durasi (menit)": seconds / 60 if seconds is not None else None,
             "RAM puncak proses (MiB)": numeric(stage.get("peak_ram_mb")),
             "RAM rata-rata proses (MiB)": numeric(stage.get("average_ram_mb")),
@@ -67,7 +71,8 @@ def write_table(path, fields, rows):
 
 REPORT_GUIDE = """# Petunjuk membaca laporan
 
-Buka ringkasan_hasil.csv terlebih dahulu. Satu baris adalah satu run objek.
+Buka index.html untuk tabel dan foto perbandingan dalam satu halaman.
+Buka ringkasan_hasil.csv untuk tabel utama. Satu baris adalah satu run objek.
 Kolom Folder adalah nama objek; Folder output membedakan lokasi setiap run.
 
 | File/folder | Isi |
@@ -208,30 +213,29 @@ def comparison_images(output, summary, target, requested):
         raise ValueError(f"Missing GT pairs: {missing[:5]}")
     count = min(requested, len(files))
     indices = [0] if count == 1 else [round(i * (len(files)-1)/(count-1)) for i in range(count)]
-    from PIL import Image, ImageDraw
+    from PIL import Image
+    from research_pipeline.comparison_visuals import comparison_canvas
     target.mkdir(parents=True, exist_ok=False)
-    generated = []
+    generated, label_layouts = [], []
     for index in indices:
         name = files[index].name
         with Image.open(gt / name) as left, Image.open(renders / name) as right:
             left, right = left.convert("RGB"), right.convert("RGB")
             if left.size != right.size:
                 raise ValueError(f"Image dimensions differ: {name}")
-            width, height = left.size
-            canvas = Image.new("RGB", (2*width, height+48), "white")
-            canvas.paste(left, (0, 48))
-            canvas.paste(right, (width, 48))
-            draw = ImageDraw.Draw(canvas)
-            draw.text((12, 15), f"Reference ({split}) | {name}", fill="black")
-            draw.text((width+12, 15), f"RaDe-GS render | {method} | {name}", fill="black")
+            canvas, layout = comparison_canvas(
+                left, right, scene_name=summary["scene_name"], split=split,
+                render_method=method, method_name=summary.get("method", "RaDe-GS"), filename=name)
             destination = target / f"{Path(name).stem}_comparison.png"
             canvas.save(destination)
+            label_layouts.append({"file": str(destination), **layout})
         generated.append(str(destination))
     return {
         "status": "complete", "split": split, "method": method,
         "selection": "Evenly spaced indices in sorted render filenames; no quality selection.",
         "note": "RGB pixels preserved without resizing or brightness adjustment. No per-pair metrics recomputed.",
         "files": generated,
+        "label_layouts": label_layouts,
     }
 
 
@@ -415,6 +419,10 @@ def sync_report_status(result):
                 item["table_row"]["Status"] = result["status"]
                 item["report_failure"] = report.get("error")
         write_json(path, details)
+        from research_pipeline.report_index import write_report_index, refresh_catalog
+        write_report_index(directory, details["experiments"])
+        if directory.parent.parent.name == "laporan":
+            refresh_catalog(directory.parent.parent.parent)
 
 
 def update_result_tables(directory, master_csv):
@@ -437,11 +445,14 @@ def update_result_tables(directory, master_csv):
     if recovery_file.is_file():
         update_report_table(recovery_table, read_csv(recovery_file), fields=RECOVERY_FIELDS)
         print(f"Rincian pemulihan mesh: {recovery_table}")
+    from research_pipeline.report_index import refresh_catalog
+    entry = refresh_catalog(master_csv.parent)
+    print(f"Pusat seluruh laporan: {entry}")
 
 
 def automatic_report(output, master_csv):
-    destination = output / "research" / ("laporan_" +
-        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8])
+    from research_pipeline.report_index import central_directory
+    destination = central_directory(master_csv)
     table = master_csv.with_name(master_csv.stem + "_laporan.csv")
     summary_table = master_csv.with_name(master_csv.stem + "_ringkasan.csv")
     try:
@@ -476,7 +487,7 @@ def export(outputs, destination, pairs=5, *, mesh_retries=None):
         seconds = numeric(summary.get("training", {}).get("duration_seconds"))
         row = dict(zip(FIELDS, [
             stamp.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S"),
-            summary["scene_name"], "RaDe-GS", numeric(rendering.get("psnr")),
+            summary["scene_name"], summary.get("method", "RaDe-GS"), numeric(rendering.get("psnr")),
             numeric(rendering.get("ssim")), numeric(rendering.get("lpips")),
             mem["gpu_total_peak_gib"], seconds / 60 if seconds is not None else None,
             rendering.get("split"), rendering.get("evaluation_image_count"), summary.get("status"),
@@ -512,6 +523,7 @@ def export(outputs, destination, pairs=5, *, mesh_retries=None):
             "experiment_id": summary.get("experiment_id"),
             "table_row": row, "memory": mem, "comparison": review,
             "geometry": summary.get("geometry", {}),
+            "initialization": summary.get("initialization"),
             "mesh_extraction": summary.get("mesh_extraction", {}),
             "recovery": summary.get("recovery"),
             "data": data, "photo_inventory": str(photo_file),
@@ -539,7 +551,10 @@ def export(outputs, destination, pairs=5, *, mesh_retries=None):
             "success_mesh_recovered reuses source training/rendering and a validated mesh retry. "
             "GT geometry has not been evaluated for that new mesh.",
         ], "experiments": details}, stream, indent=2, ensure_ascii=False, allow_nan=False)
+    from research_pipeline.report_index import write_report_index
+    write_report_index(destination, details)
     print(f"Report: {destination}")
+    print(f"Buka laporan dan foto: {destination / 'index.html'}")
     print(f"Buka ringkasan utama: {destination / 'ringkasan_hasil.csv'}")
     return destination
 
@@ -559,14 +574,17 @@ def main():
     args = parser.parse_args()
     if not args.outputs and not args.mesh_retries:
         parser.error("Supply --outputs or --mesh-retries")
-    if args.mesh_retries and args.results_csv is not None:
-        root, prefix = args.results_csv.parent, "laporan_pemulihan_"
+    if args.destination is not None:
+        destination = args.destination
+    elif args.results_csv is not None:
+        from research_pipeline.report_index import central_directory
+        destination = central_directory(args.results_csv,
+            prefix="pemulihan_" if args.mesh_retries else "laporan_")
     else:
         first = (args.outputs or args.mesh_retries)[0]
         root = (first.parent if first.is_file() else first) / "research"
-        prefix = "laporan_"
-    destination = args.destination or (root / (prefix +
-        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8]))
+        destination = root / ("laporan_" +
+            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid.uuid4().hex[:8])
     try:
         export(args.outputs, destination, args.pairs, mesh_retries=args.mesh_retries)
         if args.results_csv is not None:

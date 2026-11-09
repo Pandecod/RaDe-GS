@@ -122,7 +122,7 @@ class MeshRecoveryReportingTests(unittest.TestCase):
             self.assertEqual(detail["comparison"]["status"], "complete")
             self.assertEqual(detail["geometry"]["status"], "not_run")
             with Image.open(detail["comparison"]["files"][0]) as picture:
-                self.assertEqual(picture.getpixel((0, 48)), (0, 40, 60))
+                self.assertEqual(picture.getpixel((0, picture.height-12)), (0, 40, 60))
             for path, before in source_files.items():
                 self.assertEqual(path.read_bytes(), before, str(path))
             self.assertEqual(results.read_bytes(), technical_before)
@@ -214,7 +214,7 @@ class MeshRecoveryReportingTests(unittest.TestCase):
                     "--results-csv", str(results), "--pairs", "1"]
             with patch("sys.argv", argv), patch("subprocess.Popen", side_effect=AssertionError("No process")):
                 main()
-            self.assertEqual(len(list(results.parent.glob("laporan_pemulihan_*"))), 1)
+            self.assertEqual(len(list((results.parent / "laporan/results").glob("pemulihan_*"))), 1)
             self.assertTrue(results.with_name("results_ringkasan.csv").is_file())
             self.assertFalse(results.exists())
             self.assertEqual((model / "research/summary.json").read_bytes(), source_before)

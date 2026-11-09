@@ -1,3 +1,8 @@
+> **Lokasi laporan diperbarui:** [pusat laporan penelitian](PUSAT_LAPORAN_PENELITIAN.md).
+> Tabel dan PNG perbandingan run baru berada di sebelah results.csv, dalam
+> laporan/<dataset>/<paket>/; MULAI_DI_SINI.html menjadi halaman pembuka.
+> Folder research/laporan_* di bawah output adalah lokasi historis yang tetap disimpan.
+
 # Workflow aktif: training dan metrik RaDe-GS asli
 
 Panduan ini menggantikan perintah profiling internal dan evaluasi train pada panduan

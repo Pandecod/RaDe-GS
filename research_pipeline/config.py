@@ -15,6 +15,10 @@ DEFAULTS = {
     "output": {"root": "output/hasil_radegs_v2/togog_bali"},
     "results": {"csv": "research_results/hasil_radegs_v2/experiment_results_togog_bali.csv"},
     "colmap": {"executable": "colmap", "camera_model": "OPENCV", "use_gpu": True},
+    "scaffold_initialization": {"enabled": False, "repository": "",
+        "python_executable": "python", "iterations": 30000,
+        "expected_commit": "59c833b56bbbf510f3f64d40f81721995caced66",
+        "voxel_size": 0.001, "max_color_distance": 0.0},
     "training": {"extra_args": ["--enable_allocator_gc", "--resolution", "1920", "--eval"]},
     "rendering": {"enabled": True, "extra_args": []},
     "image_metrics": {"enabled": True},
@@ -109,6 +113,21 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("mesh.script must be mesh_extract.py or mesh_extract_tnt.py")
     if mesh["script"] == "mesh_extract.py" and (mesh["voxel_size"], mesh["max_depth"]) != (0.009, 8.0):
         raise ValueError("Restored mesh_extract.py uses fixed voxel_size=0.009 and max_depth=8.0")
+    scaffold = config["scaffold_initialization"]
+    if type(scaffold["iterations"]) is not int or scaffold["iterations"] <= 0:
+        raise ValueError("scaffold_initialization.iterations must be a positive integer")
+    if scaffold["voxel_size"] <= 0:
+        raise ValueError("scaffold_initialization.voxel_size must be positive")
+    revision = scaffold["expected_commit"]
+    if not isinstance(revision, str) or (revision and (
+            len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision))):
+        raise ValueError("scaffold_initialization.expected_commit must be empty or a full lowercase SHA")
+    for key in ("repository", "python_executable"):
+        if not isinstance(scaffold[key], str):
+            raise ValueError(f"scaffold_initialization.{key} must be text")
+    if scaffold["enabled"]:
+        if not scaffold["repository"].strip() or not scaffold["python_executable"].strip():
+            raise ValueError("Scaffold initialization requires repository and python_executable")
     for stage in ("training", "rendering", "mesh"):
         extras = config[stage]["extra_args"]
         if not isinstance(extras, list) or any(not isinstance(a, str) for a in extras):
@@ -120,6 +139,12 @@ def validate(config: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"Invalid {stage}.extra_args: {exc}") from exc
         if unknown:
             raise ValueError(f"Unknown {stage} arguments: {unknown}")
+        if stage == "training" and scaffold["enabled"]:
+            if not parsed.eval:
+                raise ValueError("Scaffold initialization requires training --eval")
+            photo_folder = Path(parsed.images)
+            if photo_folder.is_absolute() or ".." in photo_folder.parts:
+                raise ValueError("Scaffold images must be a relative scene folder")
         if config["image_metrics"]["enabled"] and config["rendering"]["enabled"]:
             if stage == "training" and not parsed.eval:
                 raise ValueError("Native test metrics require training.extra_args to include --eval")

@@ -2,4 +2,4 @@
 PyYAML
 psutil
 scipy
-Pillow
+Pillow>=10.1

@@ -1,3 +1,5 @@
+> **Ablasi inisialisasi Scaffold-GS:** lihat [panduan Scaffold](docs/SCAFFOLD_ANCHOR_INITIALIZATION.md). Baseline tetap memakai konfigurasi yang sudah ada; konfigurasi Scaffold terpisah.
+
 > **Workflow aktif diperbarui:** gunakan [panduan RaDe-GS asli](docs/WORKFLOW_RADEGS_ASLI.md).
 > Training utama 1920 + --eval + --enable_allocator_gc; metric.py asli pada test; mesh_extract.py
 > kembali ke implementasi awal dengan voxel 0.009 dan depth 8.0.

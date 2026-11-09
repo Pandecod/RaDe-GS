@@ -80,9 +80,13 @@ class ReportingTests(unittest.TestCase):
             self.assertEqual([p.name.split("_")[0] for p in pictures],
                              ["00000", "00002", "00003", "00004", "00006"])
             with Image.open(pictures[-1]) as pair:
-                self.assertEqual(pair.size, (48, 60))
-                self.assertEqual(pair.getpixel((0, 48)), (60, 40, 60))
-                self.assertEqual(pair.getpixel((24, 48)), (60, 40, 60))
+                header = pair.height - 12
+                self.assertEqual(pair.width, 48)
+                self.assertGreater(header, 0)
+                self.assertEqual(pair.crop((0, header, 24, header+12)).tobytes(),
+                                 Image.new("RGB", (24,12), (60,40,60)).tobytes())
+                self.assertEqual(pair.crop((24, header, 48, header+12)).tobytes(),
+                                 Image.new("RGB", (24,12), (60,40,60)).tobytes())
             details = read_json(destination / "detail_laporan.json")["experiments"][0]
             self.assertEqual(details["memory"]["pytorch_allocated_peak_gib"], 1)
             with self.assertRaises(FileExistsError):

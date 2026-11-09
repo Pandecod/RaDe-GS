@@ -50,6 +50,10 @@ def experiment_id(scene_name: str, config: dict) -> str:
         "mesh": mesh_identity,
         "geometry_evaluation": config["geometry_evaluation"],
     }
+    if config.get("scaffold_initialization", {}).get("enabled", False):
+        from research_pipeline.scaffold_initialization import VERSION
+        payload["scaffold_initialization"] = {
+            **config["scaffold_initialization"], "implementation_version": VERSION}
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=False, allow_nan=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

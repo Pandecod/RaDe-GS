@@ -191,6 +191,9 @@ def execute_scene(config: dict, scene: Scene, output: Path,
         else:
             result["warnings"].append(f"{failed_stage}: {message}")
 
+    if config.get("scaffold_initialization", {}).get("enabled", False):
+        from research_pipeline.scaffold_initialization import METHOD
+        result["method"] = METHOD
     stage = "dataset_validation"
     try:
         errors = start_validation_errors(scene, start_from)
@@ -210,6 +213,19 @@ def execute_scene(config: dict, scene: Scene, output: Path,
             errors = validation_errors(scene)
             if errors:
                 raise StageFailure(stage, "COLMAP output is incomplete: " + "; ".join(errors))
+        if config.get("scaffold_initialization", {}).get("enabled", False):
+            from research_pipeline.scaffold_initialization import verify_export
+            for stage in ("scaffold_training", "scaffold_export"):
+                process = executor(
+                    result["commands"][stage], output / f"research/logs/{stage}.log",
+                    config["resource_monitor"]["interval_seconds"])
+                result[stage] = {"duration_seconds": process.duration_seconds, **process.metrics}
+                result["warnings"].extend(process.warnings)
+                if process.returncode:
+                    raise StageFailure(stage, f"{stage} exited with code {process.returncode}")
+            result["initialization"] = verify_export(output, scene.path)
+            result["initialization"]["duration_seconds"] = sum(
+                result[key]["duration_seconds"] for key in ("scaffold_training", "scaffold_export"))
         stage = "training"
         process = executor(result["commands"][stage], output / "research/logs/training.log",
                            config["resource_monitor"]["interval_seconds"])

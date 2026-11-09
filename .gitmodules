@@ -5,3 +5,6 @@
 [submodule "submodules/diff-gaussian-rasterization/third_party/glm"]
 	path = submodules/diff-gaussian-rasterization/third_party/glm
 	url = https://github.com/g-truc/glm.git
+[submodule "external/Scaffold-GS"]
+	path = eksperimen/Scaffold-GS
+	url = https://github.com/city-super/Scaffold-GS.git

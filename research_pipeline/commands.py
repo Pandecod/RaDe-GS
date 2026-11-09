@@ -17,7 +17,12 @@ def commands(config: dict, dataset: Path, output: Path,
         ]
     elif start_from != "training":
         raise ValueError(f"Unsupported start stage: {start_from}")
-    result["training"] = [sys.executable, "train.py", "-s", str(dataset), "-m", str(output),
+    training_source = dataset
+    if config.get("scaffold_initialization", {}).get("enabled", False):
+        from research_pipeline.scaffold_initialization import stage_commands
+        scaffold_commands, training_source = stage_commands(config, dataset, output)
+        result.update(scaffold_commands)
+    result["training"] = [sys.executable, "train.py", "-s", str(training_source), "-m", str(output),
                           *config["training"]["extra_args"]]
     if config["rendering"]["enabled"]:
         result["rendering"] = [sys.executable, "render.py", "-m", str(output),

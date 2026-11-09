@@ -44,6 +44,8 @@ def _run_config(config_path: Path, args) -> int:
                     print(f"GT 3D: {gt}; policy when missing: {policy}")
                 label = {
                     "colmap": "COLMAP",
+                    "scaffold_training": "SCAFFOLD TRAIN",
+                    "scaffold_export": "SCAFFOLD EXPORT",
                     "training": "TRAIN",
                     "rendering": "RENDER",
                     "image_metrics": "IMAGE METRICS",
