@@ -10,9 +10,24 @@ from research_pipeline.config import load_config, resolve_path
 from research_pipeline.scene_discovery import discover, start_validation_errors
 from research_pipeline.commands import commands, display
 
+
+def order_scenes(scenes, last_scenes):
+    """Keep discovered order, then append the requested tail without changing scenes."""
+    if len(last_scenes) != len(set(last_scenes)):
+        raise ValueError("--last-scenes must not contain duplicate names")
+    by_name = {scene.name: scene for scene in scenes}
+    missing = [name for name in last_scenes if name not in by_name]
+    if missing:
+        raise ValueError("Scene not found for --last-scenes: " + ", ".join(missing))
+    tail = set(last_scenes)
+    return [scene for scene in scenes if scene.name not in tail] + [
+        by_name[name] for name in last_scenes]
+
+
 def _run_config(config_path: Path, args) -> int:
     config = load_config(config_path)
     scenes = discover(resolve_path(config["dataset"]["root"]), args.scene)
+    scenes = order_scenes(scenes, args.last_scenes)
     if args.list_scenes:
         print(f"Discovered {len(scenes)} scenes:")
         for index, scene in enumerate(scenes, 1):
@@ -64,7 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Serial RaDe-GS Research Pipeline")
     parser.add_argument("--config", type=Path, nargs="+", required=True,
                         help="One or more YAML files, processed sequentially in the given order")
-    parser.add_argument("--scene")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--scene")
+    selection.add_argument("--last-scenes", nargs="+", default=[], metavar="SCENE",
+                           help="Run these scene names last in the supplied order; other scenes keep discovered order")
     parser.add_argument("--start-from", choices=("training", "colmap"),
                         default="training",
                         help="First stage to run (default: training)")

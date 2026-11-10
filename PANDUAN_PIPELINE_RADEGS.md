@@ -1260,3 +1260,15 @@ retry dan mesh sebelum menggabungkannya dengan metrik training/rendering awal.
 Percobaan manual yang sudah selesai tanpa monitoring tidak bisa menghasilkan
 angka puncak RAM/VRAM secara retrospektif. Riwayat terminal masih bisa disimpan
 sebagai bukti error, tetapi jangan mengisi angka yang tidak diukur.
+
+## Menempatkan objek tertentu di akhir antrean
+
+Tambahkan `--last-scenes dewi_gangga detya` pada perintah run_all.py untuk
+menempatkan keduanya paling akhir, sesuai urutan yang ditulis. Objek lain tetap
+mengikuti urutan penemuan. Opsi berlaku untuk daftar scene, dry-run, dan eksekusi;
+--resume tetap melewati hasil sukses dengan konfigurasi sama. Nama harus sama
+persis dengan folder dataset, tidak boleh duplikat, dan tidak digabung --scene.
+
+Untuk eksperimen Scaffold Togog Bali, langkah pemeriksaan dan perintah run all
+tersedia di [panduan Scaffold](docs/SCAFFOLD_ANCHOR_INITIALIZATION.md#jalankan-antrean).
+Perubahan urutan tidak mengubah resolusi, model, evaluasi, atau lokasi hasil.

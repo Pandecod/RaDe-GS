@@ -135,6 +135,42 @@ python -B research_pipeline/run_all.py \
   --start-from training --resume
 ~~~
 
+Untuk melanjutkan eksperimen Scaffold seluruh Togog Bali dengan dewi_gangga
+lalu detya sebagai dua objek terakhir, gunakan --last-scenes. Objek lain tetap
+mengikuti urutan penemuan alfabet. Nama harus sama persis dengan folder dataset;
+nama yang tidak ditemukan atau duplikat ditolak sebelum eksekusi.
+
+~~~bash
+conda activate radegs
+cd /home/pande/projects/RaDe-GS
+export SCAFFOLD_PYTHON=/home/pande/miniconda3/envs/scaffold_gs/bin/python
+
+# Periksa daftar dan urutannya tanpa training atau pembuatan output.
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali_scaffold_init.yaml \
+  --last-scenes dewi_gangga detya \
+  --start-from training --list-scenes
+
+# Untuk melihat semua perintah, ganti --list-scenes dengan --dry-run.
+# Jalankan antrean; hasil sukses dengan identitas sama dilewati.
+python -B research_pipeline/run_all.py \
+  --config configs/togog_bali_scaffold_init.yaml \
+  --last-scenes dewi_gangga detya \
+  --start-from training --resume
+~~~
+
+Opsi ini hanya mengubah urutan, bukan parameter atau experiment ID. Karena itu,
+Ganesha yang sudah sukses dengan konfigurasi yang sama tetap dapat dilewati
+oleh --resume. --list-scenes dan --dry-run menampilkan seluruh antrean;
+pemeriksaan hasil sukses untuk resume dilakukan saat eksekusi. --last-scenes
+tidak digabung dengan --scene. Jika beberapa YAML digunakan sekaligus, nama
+pada --last-scenes harus tersedia di setiap dataset tersebut.
+
+Penempatan terakhir tidak mengurangi kebutuhan memori suatu objek. Detya pernah
+memerlukan --data_device cpu pada baseline; konfigurasi Scaffold ini masih
+memakai data_device cuda. Pantau tahap Scaffold dan RaDe-GS sebelum menyimpulkan
+semua objek dapat dijalankan dengan kebutuhan memori yang sama.
+
 Urutan per objek pada konfigurasi perlakuan:
 SCAFFOLD TRAIN -> SCAFFOLD EXPORT -> TRAIN -> RENDER -> IMAGE METRICS -> MESH
 -> evaluasi geometri jika tersedia -> laporan -> objek berikutnya.
