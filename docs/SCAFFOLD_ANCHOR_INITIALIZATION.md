@@ -218,3 +218,27 @@ filter, pose/data sumber tetap sama, checksum, split, urutan antrean, kegagalan
 tahap, dan antarmuka proses training memakai fixture kecil tanpa GPU.
 Keberhasilan training CUDA dan peningkatan kualitas mesh perlu divalidasi
 dengan repositori Scaffold yang terpasang dan satu objek nyata di server.
+
+## Pemulihan benturan impor utils pada launcher
+
+Jika tahap Scaffold berhenti dengan pesan `No module named 'utils.loss_utils';
+'utils' is not a package`, perbarui launcher integrasi. Folder utils milik
+Scaffold merupakan namespace package tanpa __init__.py; file
+research_pipeline/utils.py sebelumnya bisa terpilih ketika launcher dipanggil
+sebagai skrip. Launcher kini menetapkan paket utils dari checkout Scaffold di
+subprocess tersebut dan mengeluarkan jalur runner dari pencarian impor.
+Kode training, model, loss, dan ekstensi CUDA upstream tidak diubah.
+
+Pemeriksaan scaffold_environment kini juga memanggil launcher yang sebenarnya
+memakai --help. Ini memeriksa impor lengkap tanpa training atau membuat output
+model; kegagalan impor membuat ready bernilai false. Setelah pembaruan, jalankan
+pemeriksaan environment dan ulangi pipeline satu objek dengan perintah yang sama.
+Percobaan gagal tetap disimpan; runner menempatkan percobaan berikutnya pada
+folder attempt baru bila output awal sudah ada. Tidak perlu menghapus hasil lama
+atau memasang ulang CUDA untuk memperbaiki benturan nama modul ini.
+
+Tes regresi tanpa training GPU:
+
+~~~bash
+PYTHONPATH=tests python -B -m unittest test_scaffold_launcher -v
+~~~

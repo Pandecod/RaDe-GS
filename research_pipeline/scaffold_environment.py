@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from research_pipeline.config import load_config, resolve_path
+from research_pipeline.config import REPO, load_config, resolve_path
 from research_pipeline.scaffold_initialization import repository_state, resolve_python
 
 PROBE = """
@@ -51,6 +51,21 @@ def probe_python(executable: str, role: str, repository: Path | None = None) -> 
         return {"ready": False, "error": str(exc)}
 
 
+def probe_training_imports(executable: str, repository: Path) -> dict:
+    """Exercise the actual script entry point; --help exits before training/output."""
+    try:
+        process = subprocess.run(
+            [resolve_python(executable), "-B", str(REPO / "research_pipeline/scaffold_train.py"),
+             "--repository", str(repository.resolve()), "--help"],
+            cwd=repository, capture_output=True, text=True, timeout=45)
+        result = {"ready": process.returncode == 0, "returncode": process.returncode}
+        if process.returncode:
+            result["error"] = process.stderr.strip() or process.stdout.strip()
+        return result
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {"ready": False, "error": str(exc)}
+
+
 def inspect(config_path: Path, scene_name: str | None = None) -> dict:
     from research_pipeline.scene_discovery import discover, validation_errors
     from research_pipeline.scaffold_initialization import split_manifest
@@ -78,6 +93,9 @@ def inspect(config_path: Path, scene_name: str | None = None) -> dict:
     report["radegs_environment"] = probe_python(sys.executable, "radegs")
     report["scaffold_environment"] = probe_python(
         options["python_executable"], "scaffold", repository)
+    report["training_imports"] = {"ready": False, "error": "Repository or Scaffold environment is not ready"}
+    if report["repository"].get("ready") and report["scaffold_environment"].get("ready"):
+        report["training_imports"] = probe_training_imports(options["python_executable"], repository)
     try:
         scenes = discover(resolve_path(config["dataset"]["root"]), scene_name)
         checked = []
@@ -96,7 +114,7 @@ def inspect(config_path: Path, scene_name: str | None = None) -> dict:
     except (OSError, ValueError) as exc:
         report["dataset"] = {"ready": False, "error": str(exc)}
     report["ready"] = options["enabled"] and all(report[key].get("ready", False) for key in (
-        "repository", "radegs_environment", "scaffold_environment", "dataset"))
+        "repository", "radegs_environment", "scaffold_environment", "training_imports", "dataset"))
     return report
 
 

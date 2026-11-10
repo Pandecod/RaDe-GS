@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.machinery
+import importlib.util
 from pathlib import Path
 import sys
 
@@ -39,12 +41,28 @@ def training_module(source):
     return ast.fix_missing_locations(tree)
 
 
+def prepare_imports(repository):
+    """Resolve upstream modules inside this dedicated subprocess, not the runner."""
+    launcher_dir = Path(__file__).resolve().parent
+    excluded = {repository, launcher_dir, launcher_dir.parent}
+    sys.path[:] = [str(repository)] + [
+        entry for entry in sys.path if Path(entry or ".").resolve() not in excluded]
+    # Upstream utils/ has no __init__.py. Merely prepending its parent lets a
+    # later utils.py (including research_pipeline/utils.py) replace the namespace.
+    spec = importlib.machinery.PathFinder.find_spec("utils", [str(repository)])
+    if spec is not None:
+        package = importlib.util.module_from_spec(spec)
+        sys.modules["utils"] = package
+        if spec.loader is not None:
+            spec.loader.exec_module(package)
+
+
 def main(argv=None):
     preparser = argparse.ArgumentParser(add_help=False)
     preparser.add_argument("--repository", type=Path, required=True)
     selected, remaining = preparser.parse_known_args(argv)
     repository = selected.repository.resolve()
-    sys.path.insert(0, str(repository))
+    prepare_imports(repository)
     source = repository / "train.py"
     namespace = {"__name__": "_scaffold_training_only", "__file__": str(source)}
     exec(compile(training_module(source.read_text(encoding="utf-8")),
