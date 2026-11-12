@@ -1,3 +1,5 @@
+> **Tiga objek baru dengan hasil di drive D:** lihat [panduan hanoman, anggada, dan dewi_saraswati](docs/TOGOG_BALI_TIGA_OBJEK_DRIVE_D.md). Tersedia preset baseline dan Scaffold, pemeriksaan penyimpanan, dry-run, dan perintah run.
+
 > **Pusat laporan terpadu:** lihat [panduan pengumpulan laporan](docs/PUSAT_LAPORAN_PENELITIAN.md).
 > Paket baru berisi tabel dan foto di research_results/hasil_radegs_v2/laporan/;
 > buka research_results/hasil_radegs_v2/MULAI_DI_SINI.html setelah ekspor.
