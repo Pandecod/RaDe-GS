@@ -422,13 +422,17 @@ def read_report_table(path, fields):
     return previous
 
 
-def update_report_table(path, rows, fields=FIELDS):
-    """Atomic table for sequential pipeline runs, keyed by output folder."""
+def update_report_table(path, rows, fields=FIELDS, *, superseded_failed_outputs=()):
+    """Atomic table keyed by output folder, excluding verified replaced failures."""
     from research_pipeline.utils import atomic_write
     previous = read_report_table(path, fields)
-    indexed = {row["Folder output"]: row for row in previous}
+    superseded = set(superseded_failed_outputs)
+    def keep(row):
+        return not (row.get("Status") == "failed" and row.get("Folder output") in superseded)
+    indexed = {row["Folder output"]: row for row in previous if keep(row)}
     for row in rows:
-        indexed[row["Folder output"]] = row
+        if keep(row):
+            indexed[row["Folder output"]] = row
     def write(stream):
         stream.write("\ufeff")
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -490,12 +494,29 @@ def update_result_tables(directory, master_csv):
     recovery_table = master_csv.with_name(master_csv.stem + "_pemulihan_mesh.csv")
     read_report_table(table, FIELDS)
     read_report_table(summary_table, SUMMARY_FIELDS)
-    if recovery_file.is_file():
-        read_report_table(recovery_table, RECOVERY_FIELDS)
-    update_report_table(table, read_csv(directory / "tabel_evaluasi.csv"))
+    from research_pipeline.mesh_recovery import RECOVERED_STATUS, prepare_mesh_recovery
+    previous_recoveries = read_report_table(recovery_table, RECOVERY_FIELDS)
+    superseded = {row["Folder training asal"] for row in previous_recoveries
+                  if row.get("Status") == RECOVERED_STATUS}
+    retries = []
+    details_path = directory / "detail_laporan.json"
+    if details_path.is_file():
+        for detail in read_json(details_path).get("experiments", []):
+            recovery = detail.get("recovery")
+            if not recovery:
+                continue
+            model, saved = prepare_mesh_recovery(recovery["retry_result"])
+            if (detail.get("experiment_id") != saved["experiment_id"]
+                    or detail.get("original_output_path") != saved["output_path"]):
+                raise ValueError("Exported mesh recovery does not match its recorded result")
+            superseded.add(str(model))
+            retries.append(Path(recovery["retry_result"]).parent)
+    update_report_table(table, read_csv(directory / "tabel_evaluasi.csv"),
+                        superseded_failed_outputs=superseded)
     # Include earlier report rows when creating or refreshing the short table.
     rows = [{key: row.get(key) for key in SUMMARY_FIELDS} for row in read_csv(table)]
-    update_report_table(summary_table, rows, fields=SUMMARY_FIELDS)
+    update_report_table(summary_table, rows, fields=SUMMARY_FIELDS,
+                        superseded_failed_outputs=superseded)
     print(f"Tabel evaluasi gabungan: {table}")
     print(f"Ringkasan seluruh run: {summary_table}")
     if recovery_file.is_file():
@@ -504,6 +525,14 @@ def update_result_tables(directory, master_csv):
     from research_pipeline.report_index import refresh_catalog
     entry = refresh_catalog(master_csv.parent)
     print(f"Pusat seluruh laporan: {entry}")
+    from research_pipeline.attempt_retention import cleanup_mesh_retries
+    for retry in dict.fromkeys(retries):
+        try:
+            info = cleanup_mesh_retries(retry)
+            if info["outputs"] or info["warnings"]:
+                print(f"Pembersihan retry mesh: {info}")
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            print(f"Pembersihan retry mesh belum selesai: {exc}")
 
 
 def automatic_report(output, master_csv):

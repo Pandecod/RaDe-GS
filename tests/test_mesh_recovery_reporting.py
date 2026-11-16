@@ -68,7 +68,7 @@ def mesh_retry(model, summary):
 
 
 class MeshRecoveryReportingTests(unittest.TestCase):
-    def test_combined_views_preserve_original_runs_and_use_retry_mesh_measurements(self):
+    def test_combined_views_replace_source_failures_and_use_retry_mesh_measurements(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             results = root / "research_results/results.csv"
@@ -89,9 +89,12 @@ class MeshRecoveryReportingTests(unittest.TestCase):
                 export([], destination, pairs=1, mesh_retries=[retry, second])
                 update_result_tables(destination, results)
             rows = read_csv(results.with_name("results_ringkasan.csv"))
-            self.assertEqual(len(rows), 5)
+            self.assertEqual(len(rows), 3)
             for original in before_rows:
-                self.assertIn(original, rows)
+                if original["Status"] == "success":
+                    self.assertIn(original, rows)
+                else:
+                    self.assertNotIn(original, rows)
             recovered = [row for row in rows if row["Status"] == RECOVERED_STATUS]
             self.assertEqual({r["Folder"] for r in recovered}, {"tualen", "rangda"})
             for row in recovered:
@@ -129,7 +132,10 @@ class MeshRecoveryReportingTests(unittest.TestCase):
             again = root / "research_results/second_report"
             export([], again, pairs=1, mesh_retries=[retry])
             update_result_tables(again, results)
-            self.assertEqual(len(read_csv(results.with_name("results_ringkasan.csv"))), 5)
+            self.assertEqual(len(read_csv(results.with_name("results_ringkasan.csv"))), 3)
+            automatic_report(tualen, results)
+            self.assertEqual(len(read_csv(results.with_name("results_ringkasan.csv"))), 3)
+            self.assertNotIn("failed", {row["Status"] for row in read_csv(results.with_name("results_laporan.csv"))})
             self.assertEqual(len(read_csv(results.with_name("results_pemulihan_mesh.csv"))), 2)
 
     def test_mixed_export_includes_detya_and_retry_as_separate_rows(self):

@@ -275,9 +275,12 @@ python -B research_pipeline/run_all.py \
 
 Command tanpa --dry-run memulai training baru, dilanjutkan rendering, evaluasi,
 mesh, dan laporan. Jika folder output scene sudah berisi hasil, pipeline memakai
-runs/<waktu>_<id>/ untuk run berikutnya. CSV utama memperbarui baris dengan
-identitas eksperimen yang sama; CSV laporan ringkas mempertahankan folder run
-yang berbeda. Jangan menjalankan beberapa pipeline yang menulis CSV yang sama.
+runs/<waktu>_<id>/ untuk run berikutnya. Setelah percobaan pengganti sukses dan
+model, summary, CSV utama serta laporan tersimpan, folder gagal dengan identitas
+eksperimen yang sama dibersihkan. Baris gagal terkait pada tabel _laporan.csv dan
+_ringkasan.csv serta paket laporan yang hanya berisi hasil gagal itu ikut dihapus.
+Hasil sukses tetap tersimpan; jika pengulangan kembali gagal, hasil lama belum
+dibersihkan. Jangan menjalankan beberapa pipeline yang menulis CSV yang sama.
 
 Untuk foto berukuran 3862 x 2150 piksel, lebar training 1920 menghasilkan sekitar
 1920 x 1069 piksel; foto 16:9 menghasilkan 1920 x 1080 piksel. ukuran aktual mengikuti rasio foto yang dimuat. Pengaturan
@@ -399,8 +402,12 @@ python research_pipeline/run_all.py \
   --force
 ```
 
-`--resume` dan `--force` tidak dapat dipakai bersamaan. Output lama tidak
-dihapus; attempt baru dibuat di `runs/<timestamp>_<id>/`.
+`--resume` dan `--force` tidak dapat dipakai bersamaan. Attempt baru dibuat di
+`runs/<timestamp>_<id>/`. Hasil sukses lama dipertahankan. Percobaan gagal dengan
+objek dan konfigurasi yang sama dibersihkan setelah penggantinya sukses.
+`--resume` juga mencoba pembersihan ini untuk eksperimen yang sudah sukses,
+tanpa mengulang training. Lihat bagian pembersihan di
+[workflow aktif](docs/WORKFLOW_RADEGS_ASLI.md#pembersihan-percobaan-gagal).
 
 ## 8. Mengurangi beban pipeline
 

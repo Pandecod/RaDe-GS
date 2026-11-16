@@ -92,10 +92,17 @@ undistortion before training. COLMAP writes to a unique directory below
 `<scene>/.pipeline_colmap/`; `images/` and `sparse/0/` are published only after
 the staged result passes validation. A complete existing scene skips COLMAP.
 
-`--resume` skips only a row whose deterministic experiment ID matches and whose
-status is `success`. Failed experiments run again. `--force` always runs and
-never deletes an old model, checkpoint, mesh, or log. If a scene output already
-contains files, a new `runs/<timestamp>_<id>/` attempt is used.
+`--resume` skips training for a matching successful experiment and retries cleanup
+of its superseded failed attempts. Failed experiments run again. `--force` always
+runs. Occupied scene folders use a new `runs/<timestamp>_<id>/` attempt. Once the
+replacement model, summary, master CSV and report are saved successfully, recorded
+failed attempts for that same experiment ID are removed, together with their
+failed rows in the active report tables and standalone failed report packages.
+Existing successful runs, different configurations, unidentified partial outputs,
+and source models needed by a successful mesh recovery are retained. A failed
+replacement never triggers cleanup. Mixed exported collections remain snapshots.
+Preview existing cleanup with `python -B -m research_pipeline.attempt_retention
+--config configs/togog_bali.yaml --dry-run`; use `--apply` to perform it.
 
 The pipeline processes scenes in alphabetic order using one synchronous
 subprocess at a time. Training uses exactly:

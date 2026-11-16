@@ -79,9 +79,11 @@ python -B research_pipeline/run_all.py \
   --start-from training
 ```
 
-`--resume` melewati eksperimen sukses dengan konfigurasi cocok. Perubahan split
-atau parameter menghasilkan identitas eksperimen baru. Bila folder hasil sudah
-berisi data, hasil baru masuk `runs/<timestamp>/`, bukan menimpa hasil lama.
+`--resume` melewati training eksperimen sukses dengan konfigurasi cocok dan
+mencoba membersihkan percobaan gagalnya yang lama. Perubahan split atau parameter
+menghasilkan identitas eksperimen baru. Bila folder hasil sudah berisi data,
+hasil baru masuk `runs/<timestamp>/`. Setelah pengganti sukses tersimpan lengkap,
+percobaan gagal dengan identitas yang sama dibersihkan. Hasil sukses dipertahankan.
 
 ## Perintah manual dengan output baru
 
@@ -333,3 +335,68 @@ Nilai GT untuk mesh yang baru belum dievaluasi oleh proses ekspor ini.
 
 Perintah lengkap untuk Detya, Tualen dan Rangda ada di
 [Pemulihan: memasukkan hasil retry ke laporan](PEMULIHAN_DETYA_RANGDA_TUALEN.md#memasukkan-hasil-retry-ke-laporan-research_results).
+
+## Pembersihan percobaan gagal
+
+Pipeline membersihkan hasil gagal setelah model, summary.json, CSV utama, dan
+laporan penggantinya berstatus sukses dan sudah tersimpan. Yang dicocokkan adalah
+objek, metode, dan experiment ID, sehingga konfigurasi berbeda tetap terpisah.
+Folder hasil sukses dapat tetap berada di runs/<id>/; path sumber tidak dipindah.
+Folder gagal, checkpoint/render/log di dalamnya, baris gagal pada tabel aktif,
+dan paket mandiri yang hanya memuat kegagalan tersebut dibersihkan.
+
+Jika pengulangan masih gagal, percobaan lama belum dihapus. Hasil sukses lama,
+output tanpa ringkasan yang dapat diverifikasi, sumber untuk mesh retry sukses,
+dan snapshot ekspor gabungan tetap dipertahankan. Folder dari salinan komputer
+lain yang output_path-nya tidak cocok dengan lokasi aktual juga tidak dihapus.
+Kegagalan pembersihan dicatat pada retention dan warnings di summary.json;
+status eksperimen sukses tetap menunjukkan hasil training/evaluasinya.
+
+Untuk merapikan hasil gagal lama yang sudah mempunyai pengganti sukses,
+tanpa mengulang training, periksa rencananya dahulu:
+
+```bash
+python -B -m research_pipeline.attempt_retention \
+  --config configs/togog_bali.yaml configs/tanks_temples.yaml \
+  --dry-run
+```
+
+Jalankan pembersihan pada lokasi output yang sama dengan run aslinya:
+
+```bash
+python -B -m research_pipeline.attempt_retention \
+  --config configs/togog_bali.yaml configs/tanks_temples.yaml \
+  --apply
+```
+
+Tambahkan konfigurasi Scaffold bila ingin merapikan hasil metode tersebut.
+Perintah membaca hasil sukses yang tercatat dalam results.csv. Ringkasan yang
+hilang atau tidak cocok menghentikan perintah, sehingga arsip yang belum dapat
+diverifikasi dapat diperiksa sebelum pembersihan dilanjutkan.
+
+### Pengulangan ekstraksi mesh
+
+Setelah retry mesh sukses tersimpan dan tervalidasi, retry gagal atau terputus
+yang memakai model dan snapshot training/evaluasi yang sama dibersihkan.
+Parameter ekstraksi boleh berbeda, misalnya pemulihan block_resolution 8 sesudah
+percobaan 16 gagal. Retry yang masih berjalan, tidak teridentifikasi, atau sudah
+sukses tetap dipertahankan.
+
+Exporter dan collector mengganti baris sumber gagal pada tabel aktif
+_laporan.csv dan _ringkasan.csv dengan success_mesh_recovered yang tervalidasi.
+Model Gaussian, foto, summary asal, dan CSV teknis tetap menjadi sumber asal;
+hasil pemulihan membutuhkan file tersebut. Metadata sumber tidak diubah menjadi
+run pipeline sukses. Menjalankan ekspor sumber gagal lagi tidak menambahkan
+kembali baris gagal ketika tabel pemulihan sudah mencatat hasil suksesnya.
+
+Pemeriksaan --config di atas juga memeriksa retry sukses pada folder output.
+Untuk satu retry tertentu gunakan:
+
+```bash
+python -B -m research_pipeline.attempt_retention \
+  --mesh-retries <folder_mesh_retry_yang_sukses> --dry-run
+```
+
+Ganti --dry-run dengan --apply untuk membersihkan retry gagal terkait. Ekspor
+ulang atau jalankan collector untuk memperbarui tabel gabungan hasil yang sudah
+ada. Pembersihan ini tidak menjalankan training atau ekstraksi mesh baru.

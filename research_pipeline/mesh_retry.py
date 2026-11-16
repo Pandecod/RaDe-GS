@@ -171,6 +171,13 @@ def retry_mesh(model_path, *, max_depth, script="mesh_extract.py", iteration=300
             except (OSError, ValueError) as exc:
                 result["warnings"].append(f"Native runtime metadata could not be read: {exc}")
         _write_report(attempt, result)
+        if result["status"] == "success":
+            from research_pipeline.attempt_retention import finalize_mesh_retention
+            finalize_mesh_retention(attempt, result)
+            try:
+                _write_report(attempt, result)
+            except (OSError, ValueError) as exc:
+                print(f"[MESH RETRY] Could not save cleanup status: {exc}", file=sys.stderr)
     print(f"[MESH RETRY] Status: {result['status']}", flush=True)
     print(f"[MESH RETRY] Report: {attempt / 'result.csv'}", flush=True)
     if result.get("error_message"):

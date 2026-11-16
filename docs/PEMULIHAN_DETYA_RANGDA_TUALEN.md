@@ -315,7 +315,7 @@ Buka berkas berikut di `research_results/hasil_radegs_v2/`:
 
 | File | Isi yang diperbarui |
 | --- | --- |
-| `experiment_results_togog_bali_ringkasan.csv` | Ringkasan utama 18 kolom; baris lama dipertahankan dan hasil retry ditambahkan. |
+| `experiment_results_togog_bali_ringkasan.csv` | Ringkasan utama 20 kolom; baris sumber gagal diganti hasil retry sukses, hasil sukses lain tetap dipertahankan. |
 | `experiment_results_togog_bali_laporan.csv` | Tabel lengkap, termasuk status GT. |
 | `experiment_results_togog_bali_pemulihan_mesh.csv` | Sumber run/retry, blok 8, voxel/depth, durasi mesh, RAM/VRAM, vertex/face, jumlah blok dan ukuran buffer. |
 | `laporan_pemulihan_<waktu>_<id>/` | Laporan gabungan baru, rincian proses, detail JSON, daftar foto, dan gambar perbandingan jika render/referensi asal tersedia. |
@@ -326,7 +326,9 @@ Arti status untuk pemilihan data laporan:
 - `success_mesh_recovered`: training dan evaluasi asal dipakai bersama hasil
   retry mesh yang berhasil. Ini baris pemulihan terpisah, bukan perubahan
   riwayat run asal menjadi sukses.
-- `failed`: percobaan gagal sebelumnya tetap tersimpan.
+- `failed`: tetap ditampilkan bila belum ada pengganti sukses yang tervalidasi.
+  Setelah pemulihan diekspor, baris gagal sumbernya diganti pada tabel utama;
+  summary dan model sumber tetap disimpan untuk asal data dan pemakaian hasil.
 
 Untuk memasukkan hasil berhasil ke analisis, pilih `success` dan
 `success_mesh_recovered`, lalu catat konfigurasi pemulihan pada metodologi.

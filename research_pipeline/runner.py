@@ -325,11 +325,13 @@ def execute_scene(config: dict, scene: Scene, output: Path,
 def run_batch(config: dict, scenes: list[Scene], resume: bool = False,
               force: bool = False, start_from: str = "training") -> int:
     from research_pipeline.results import (
-        ensure_master_csv, experiment_id, reproducibility, successful_ids,
+        ensure_master_csv, experiment_id, read_rows, reproducibility, successful_ids,
         timestamp, upsert_result, write_summary,
     )
 
     from research_pipeline.reporting import automatic_report, sync_report_status
+    from research_pipeline.attempt_retention import finalize_retention
+    from research_pipeline.utils import read_json
 
     csv_path = resolve_path(config["results"]["csv"])
     try:
@@ -344,6 +346,15 @@ def run_batch(config: dict, scenes: list[Scene], resume: bool = False,
         identity = experiment_id(scene.name, config)
         if resume and not force and identity in completed:
             logging.info("SKIPPED: matching successful experiment %s", identity)
+            try:
+                previous = next(row for row in read_rows(csv_path)
+                                if row["experiment_id"] == identity and row["status"] == "success")
+                saved = read_json(Path(previous["output_path"]) / "research/summary.json")
+                if saved.get("status") != "success" or saved.get("experiment_id") != identity:
+                    raise ValueError("Saved success does not match the master CSV")
+                finalize_retention(config, saved)
+            except (OSError, ValueError, RuntimeError, KeyError, StopIteration) as exc:
+                logging.warning("Could not clean prior failed attempts for %s: %s", scene.name, exc)
             continue
         output = allocate_output(resolve_path(config["output"]["root"]), scene.name)
         if start_from == "training":
@@ -384,6 +395,8 @@ def run_batch(config: dict, scenes: list[Scene], resume: bool = False,
             upsert_result(csv_path, result)
         except (OSError, RuntimeError, ValueError) as exc:
             raise RuntimeError(f"CRITICAL: master CSV write failed: {exc}") from exc
+        if result["status"] == "success":
+            finalize_retention(config, result)
         failed |= result["status"] != "success"
         logging.info("%s: %s", result["status"], result["error_message"] or scene.name)
     return 1 if failed else 0

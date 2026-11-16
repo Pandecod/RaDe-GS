@@ -46,7 +46,10 @@ research_results/hasil_radegs_v2/
 
 Paket otomatis per run baru berada pada lokasi yang sama dengan awalan
 laporan_, sedangkan ekspor retry memakai pemulihan_. Setiap ekspor membuat
-paket baru. Folder lama tidak ditimpa atau dihapus.
+paket baru. Setelah pengulangan pipeline sukses, paket mandiri yang hanya berisi
+percobaan gagal yang digantikannya dibersihkan bersama barisnya pada tabel aktif.
+Paket sukses dan kumpulan ekspor yang mencampur beberapa hasil tetap tersimpan
+sebagai snapshot. Buat kumpulan baru untuk membaca keadaan hasil terkini.
 
 | Berkas | Gunakan untuk |
 | --- | --- |
