@@ -114,6 +114,7 @@ class ReportingTests(unittest.TestCase):
                 "Split evaluasi", "Jumlah gambar evaluasi", "Status",
                 "Jumlah foto terdaftar", "Foto training", "Foto test", "Gaussian awal",
                 "Splats PLY akhir", "Iterasi PLY", "Folder output",
+                "peak_vram_mb", "average_vram_mb",
             ])
             self.assertEqual(main, {key: complete[key] for key in main})
             self.assertEqual(main["Split evaluasi"], "train")

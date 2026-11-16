@@ -51,7 +51,7 @@ def central_directory(master_csv, *, prefix="laporan_"):
 def write_report_index(directory, details):
     """Link only artifacts inside this package, so copied packages stay readable."""
     directory = Path(directory).resolve()
-    columns = ["Folder", "Metode", "Status", "Split evaluasi", "PSNR (dB)", "SSIM", "LPIPS", "Training (menit)", "Peak VRAM seluruh GPU (GiB)"]
+    columns = ["Folder", "Metode", "Status", "Split evaluasi", "PSNR (dB)", "SSIM", "LPIPS", "Training (menit)", "Peak VRAM seluruh GPU (GiB)", "peak_vram_mb", "average_vram_mb"]
     body = ["<h1>Laporan penelitian rekonstruksi 3D</h1>",
             "<p class=\"muted\">Tabel, foto perbandingan, dan sumber pengukuran dalam satu paket. Buka berkas HTML ini setelah folder disalin.</p>",
             "<nav>"]
@@ -70,7 +70,9 @@ def write_report_index(directory, details):
                     'Jika belum ada hasil sukses, kegagalan terakhir tetap ditampilkan. Pemilihan tidak berdasarkan besarnya metrik atau tampilan foto.</p>')
         if collection.get("unverified_records"):
             body.append(f'<p class="status bad">Ada {text(collection["unverified_records"])} catatan yang tidak dapat diverifikasi. Periksa riwayat_percobaan.csv sebelum memakai paket ini.</p>')
-    body.append('<p>Peak VRAM adalah puncak sampel seluruh GPU saat training, termasuk aplikasi lain. Nilai kosong berarti tidak tersedia. '
+    body.append('<p>Peak VRAM seluruh GPU adalah puncak sampel GPU saat training, termasuk aplikasi lain. '
+                'peak_vram_mb dan average_vram_mb mengukur puncak dan rata-rata sampel VRAM khusus proses training RaDe-GS beserta proses anaknya (MiB). '
+                'Nilai kosong berarti tidak tersedia. '
                 'Foto dipilih merata berdasarkan urutan nama, tanpa memilih hasil yang tampak paling bagus. '
                 'Pasangan menampilkan foto referensi di kiri dan render model di kanan.</p>')
     body.append('<div class="scroll"><table><thead><tr>' + ''.join(f'<th>{escape(c)}</th>' for c in columns) + '</tr></thead><tbody>')

@@ -41,3 +41,7 @@ Thumbs.db
 /research_results/hasil_radegs/
 /research_results/hasil_radegs_v2/
 /dataset/ground_truth/
+
+# Data CSV hasil eksperimen lokal
+/data csv/
+/experiment_results_togog_bali.csv

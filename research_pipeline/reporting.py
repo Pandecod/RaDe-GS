@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import uuid
 
+PROCESS_VRAM_FIELDS = ["peak_vram_mb", "average_vram_mb"]
 FIELDS = [
     "Waktu ringkasan (UTC+08)", "Folder", "Metode", "PSNR (dB)", "SSIM",
     "LPIPS", "Peak VRAM seluruh GPU (GiB)", "Training (menit)",
@@ -18,9 +19,9 @@ FIELDS = [
     "Splats PLY akhir", "Iterasi PLY", "Folder output",
     "Status GT 3D", "Alasan GT dilewati", "Chamfer (satuan rekonstruksi)",
     "Precision geometri", "Recall geometri", "F1 geometri", "File GT 3D",
-]
-# Preserve the saved evaluation/GT table; provide a shorter main reading view.
-SUMMARY_FIELDS = FIELDS[:18]
+] + PROCESS_VRAM_FIELDS
+# Keep historical columns; append process-only training VRAM to both views.
+SUMMARY_FIELDS = FIELDS[:18] + PROCESS_VRAM_FIELDS
 RESOURCE_FIELDS = [
     "Folder", "Metode", "Tahap", "Ketersediaan data", "Durasi (menit)",
     "RAM puncak proses (MiB)", "RAM rata-rata proses (MiB)",
@@ -46,8 +47,8 @@ def resource_rows(summary, mem):
             "Durasi (menit)": seconds / 60 if seconds is not None else None,
             "RAM puncak proses (MiB)": numeric(stage.get("peak_ram_mb")),
             "RAM rata-rata proses (MiB)": numeric(stage.get("average_ram_mb")),
-            "VRAM puncak proses (MiB)": numeric(stage.get("peak_vram_mb")),
-            "VRAM rata-rata proses (MiB)": numeric(stage.get("average_vram_mb")),
+            "VRAM puncak proses (MiB)": numeric((mem if key == "training" else stage).get("peak_vram_mb")),
+            "VRAM rata-rata proses (MiB)": numeric((mem if key == "training" else stage).get("average_vram_mb")),
             "Peak VRAM seluruh GPU saat training (GiB)":
                 mem["gpu_total_peak_gib"] if key == "training" else None,
             "File sampel resource": stage.get("resource_csv"),
@@ -77,7 +78,7 @@ Kolom Folder adalah nama objek; Folder output membedakan lokasi setiap run.
 
 | File/folder | Isi |
 | --- | --- |
-| ringkasan_hasil.csv | 18 kolom utama: waktu, objek, metrik, VRAM GPU, waktu training, foto, dan splats. |
+| ringkasan_hasil.csv | 20 kolom utama: waktu, objek, metrik, VRAM GPU/proses, waktu training, foto, dan splats. |
 | rincian_proses.csv | Waktu, RAM, dan VRAM untuk training, rendering, dan ekstraksi mesh. |
 | tabel_evaluasi.csv | Tabel evaluasi lengkap, termasuk status dan hasil GT 3D. |
 | detail_laporan.json | Data teknis, sumber angka, dan lokasi berkas pembanding. |
@@ -88,7 +89,12 @@ Waktu ringkasan adalah waktu pencatatan hasil, bukan waktu mulai training.
 Training (menit) mencakup persiapan dan penyimpanan dalam proses training.
 Durasi rendering terpisah dari waktu menjalankan metric.py.
 RAM adalah sampel RSS proses beserta proses anak; MiB = 1024**2 byte.
-VRAM proses hanya diisi jika monitor menyediakan datanya.
+peak_vram_mb dan average_vram_mb adalah puncak dan rata-rata sampel VRAM proses
+training RaDe-GS beserta proses anaknya; satuannya MiB (1024**2 byte).
+Rendering, mesh, dan training Scaffold-GS dicatat terpisah pada rincian_proses.csv.
+Rata-rata dihitung dari sampel valid, dengan setiap waktu sampel dihitung sekali.
+VRAM proses hanya diisi jika monitor menyediakan datanya. Jika driver melaporkan
+N/A, kolom tetap kosong; tidak diganti VRAM seluruh GPU atau allocator PyTorch.
 Peak VRAM seluruh GPU mencakup aplikasi lain; GiB = 1024**3 byte.
 Angka puncak berasal dari sampel, sehingga puncak di antara sampel bisa terlewat.
 Kolom kosong berarti tidak tersedia, bukan nol. Tidak tercatat bukan status gagal.
@@ -133,7 +139,41 @@ def read_csv(path):
     return rows
 
 
+def sampled_process_memory(rows):
+    """Count a process-tree observation once, even when CSV repeats it per GPU."""
+    samples = {}
+    for index, row in enumerate(rows):
+        if row.get("process_vram_status") not in (None, "", "available"):
+            continue
+        value = numeric(row.get("process_vram_mb"))
+        if value is None or value < 0:
+            continue
+        key = ((row.get("root_pid"), row.get("utc"), row.get("elapsed_seconds"))
+               if row.get("utc") or row.get("elapsed_seconds") else ("row", index))
+        # Conflicting copies cannot establish a reliable process-tree total.
+        if key in samples and samples[key] != value:
+            samples[key] = None
+        else:
+            samples[key] = value
+    values = [value for value in samples.values() if value is not None]
+    return {
+        "peak_vram_mb": max(values) if values else None,
+        "average_vram_mb": sum(values) / len(values) if values else None,
+        "process_vram_samples": len(values),
+    }
+
+
+def add_process_memory(info, rows, source):
+    measured = sampled_process_memory(rows)
+    if measured["process_vram_samples"]:
+        info.update(measured)
+        info["process_vram_source"] = str(source)
+
+
 def memory_info(output):
+    summary_path = output / "research/summary.json"
+    summary = read_json(summary_path) if summary_path.is_file() else {}
+    training = summary.get("training", {})
     directory = output / "research" / "profiling"
     manifests = sorted(directory.glob("manifest_*.json"))
     if len(manifests) > 1:
@@ -142,11 +182,19 @@ def memory_info(output):
         "gpu_total_peak_gib": None, "pytorch_allocated_peak_gib": None,
         "pytorch_reserved_peak_gib": None, "gpu_samples": 0,
         "note": "GPU total includes other applications; a sampled maximum, not process VRAM.",
+        "process_vram_samples": training.get("vram_sample_count"),
+        "process_vram_source": None,
+        "process_vram_note": "Sampled training PID + descendants only, in MiB (1024**2 bytes). "
+                             "Average uses valid observations only. Missing process values stay unknown; "
+                             "device-global VRAM and PyTorch allocator values are never substituted.",
     }
+    for key in PROCESS_VRAM_FIELDS:
+        value = numeric(training.get(key))
+        info[key] = value if value is not None and value >= 0 else None
+    if any(info[key] is not None for key in PROCESS_VRAM_FIELDS):
+        info["process_vram_source"] = "summary.training"
     if not manifests:
-        summary_path = output / "research/summary.json"
-        summary = read_json(summary_path) if summary_path.is_file() else {}
-        resource = summary.get("training", {}).get("resource_csv")
+        resource = training.get("resource_csv")
         if not resource:
             info["note"] += " No training resource CSV available."
             return info
@@ -157,7 +205,9 @@ def memory_info(output):
         if not resource_path.is_file():
             info["note"] += " Training resource CSV is missing."
             return info
-        rows = [r for r in read_csv(resource_path) if r.get("device_status") == "available"]
+        rows = read_csv(resource_path)
+        add_process_memory(info, rows, resource_path)
+        rows = [r for r in rows if r.get("device_status") == "available"]
         devices = {r.get("gpu_uuid") or r.get("gpu_index") for r in rows}
         if len(devices) == 1:
             info["gpu_total_peak_gib"] = maximum(rows, "device_vram_used_mb", 1024)
@@ -176,6 +226,7 @@ def memory_info(output):
     info["run_id"] = run_id
     if gpu.exists():
         rows = read_csv(gpu)
+        add_process_memory(info, rows, gpu)
         rows = [r for r in rows if r.get("device_status") == "available"]
         devices = {r.get("gpu_uuid") or r.get("gpu_index") for r in rows}
         if len(devices) > 1:
@@ -361,8 +412,13 @@ def read_report_table(path, fields):
     previous = read_csv(path) if path.exists() else []
     if path.exists():
         with path.open(encoding="utf-8-sig", newline="") as stream:
-            if next(csv.reader(stream), []) != fields:
+            header = next(csv.reader(stream), [])
+            legacy = [key for key in fields if key not in PROCESS_VRAM_FIELDS]
+            upgrade = fields in (FIELDS, SUMMARY_FIELDS) and header == legacy
+            if header != fields and not upgrade:
                 raise ValueError(f"Report CSV schema mismatch: {path}")
+    # Older tables gain empty process columns; historical values remain intact.
+    previous = [{key: row.get(key) for key in fields} for row in previous]
     return previous
 
 
@@ -492,6 +548,7 @@ def export(outputs, destination, pairs=5, *, mesh_retries=None):
             mem["gpu_total_peak_gib"], seconds / 60 if seconds is not None else None,
             rendering.get("split"), rendering.get("evaluation_image_count"), summary.get("status"),
         ]))
+        row.update({key: mem[key] for key in PROCESS_VRAM_FIELDS})
         counts, data = scene_data(output, summary, mem)
         data["asset_root"] = str(output)
         row.update(counts)

@@ -1,4 +1,4 @@
-> **Tiga objek baru dengan hasil di drive D:** lihat [panduan hanoman, anggada, dan dewi_saraswati](docs/TOGOG_BALI_TIGA_OBJEK_DRIVE_D.md). Tersedia preset baseline dan Scaffold, pemeriksaan penyimpanan, dry-run, dan perintah run.
+> **Tiga objek baru dengan hasil di folder proyek:** lihat [panduan hanoman, anggada, dan dewi_saraswati](docs/TOGOG_BALI_TIGA_OBJEK.md). Gunakan konfigurasi utama baseline dan Scaffold, pemeriksaan penyimpanan, dry-run, dan perintah run.
 
 > **Pusat laporan terpadu:** lihat [panduan pengumpulan laporan](docs/PUSAT_LAPORAN_PENELITIAN.md).
 > Paket baru berisi tabel dan foto di research_results/hasil_radegs_v2/laporan/;
@@ -10,7 +10,7 @@
 > Training utama 1920 + --eval + --enable_allocator_gc; metric.py asli pada test; mesh_extract.py
 > kembali ke implementasi awal dengan voxel 0.009 dan depth 8.0.
 > Output baru: output/hasil_radegs_v2/<dataset>/<objek>; tabel: research_results/hasil_radegs_v2/.
-> Buka `<nama_csv>_ringkasan.csv` untuk 18 kolom utama; rincian waktu/RAM/VRAM
+> Buka `<nama_csv>_ringkasan.csv` untuk 20 kolom utama; rincian waktu/RAM/VRAM
 > ada di paket terpusat `laporan/<dataset>/<paket>/rincian_proses.csv`.
 > Ekspor hasil lama: tambahkan `--results-csv <path results.csv dari YAML>`
 > agar tabel gabungan `_laporan.csv` dan `_ringkasan.csv` ikut diperbarui.
@@ -744,7 +744,8 @@ Laporan berada di <output scene>/research/laporan_<waktu>_<id>/:
 Kolom tabel: waktu ringkasan (UTC+08), folder scene/kelas, metode RaDe-GS,
 PSNR, SSIM, LPIPS, peak VRAM seluruh GPU (GiB), training (menit), split evaluasi,
 jumlah gambar evaluasi, status run, jumlah foto terdaftar, foto training,
-foto test, Gaussian awal, splats PLY akhir, iterasi PLY, dan folder output.
+foto test, Gaussian awal, splats PLY akhir, iterasi PLY, folder output,
+serta peak_vram_mb dan average_vram_mb khusus proses training RaDe-GS (MiB).
 
 Pipeline juga menggabungkan baris run secara otomatis ke CSV pendamping:
 nama results.csv pada konfigurasi diberi akhiran _laporan.
@@ -776,7 +777,11 @@ Peak VRAM seluruh GPU menggunakan maksimum sampel device_vram_used_mb dari run
 profiler yang sama, MiB dibagi 1024 menjadi GiB. Nilai ini mencakup aplikasi lain
 dan bisa melewatkan lonjakan di antara sampel. Ini berbeda dari VRAM per proses
 atau peak allocator PyTorch. Peak allocated/reserved PyTorch dicatat terpisah
-di detail_laporan.json. Jika tidak ada data, kolom kosong, bukan nol.
+di detail_laporan.json. Kolom peak_vram_mb dan average_vram_mb memakai
+sampel PID training RaDe-GS beserta proses anaknya, tanpa rendering/mesh atau
+aplikasi lain. Rata-rata hanya memakai sampel proses valid; satuan MiB sama
+dengan 1024**2 byte. Jika tidak ada data per proses atau driver melaporkan N/A,
+kolom kosong, bukan nol dan tidak diganti VRAM seluruh GPU.
 Jika beberapa GPU terdeteksi, nilai seluruh GPU dikosongkan; beberapa manifest
 run dalam satu output ditolak agar eksperimen tidak tercampur.
 

@@ -51,7 +51,7 @@ paket baru. Folder lama tidak ditimpa atau dihapus.
 | Berkas | Gunakan untuk |
 | --- | --- |
 | index.html | Membaca tabel dan melihat pasangan foto di satu halaman. |
-| ringkasan_hasil.csv | Tabel utama 18 kolom untuk analisis. |
+| ringkasan_hasil.csv | Tabel utama 20 kolom, termasuk VRAM seluruh GPU dan VRAM khusus proses training. |
 | tabel_evaluasi.csv | Tabel lengkap, termasuk status GT. |
 | rincian_proses.csv | Waktu dan RAM/VRAM per tahap; yang tidak tersedia tetap kosong. |
 | 01_<objek>/, 02_<objek>/, ... | PNG perbandingan, referensi di kiri dan render di kanan. |
@@ -145,8 +145,27 @@ Cadangkan output asli secara terpisah untuk reproduksibilitas dan pemeriksaan
 geometri. Render/GT dan summary asli harus masih tersedia ketika collector
 membuat PNG perbandingan. Data yang hilang ditandai belum tersedia.
 
-Peak VRAM pada ringkasan tetap maksimum sampel seluruh GPU selama training,
-termasuk aplikasi lain. VRAM khusus proses yang tidak terbaca tetap N/A/kosong.
+Peak VRAM seluruh GPU (GiB) tetap maksimum sampel seluruh GPU selama training,
+termasuk aplikasi lain. Dua kolom tambahan peak_vram_mb dan average_vram_mb
+mengukur puncak dan rata-rata sampel VRAM PID training RaDe-GS beserta proses
+anaknya, dalam MiB (1024**2 byte). Rendering, ekstraksi mesh, dan training
+Scaffold-GS berada pada baris tahap terpisah di rincian_proses.csv.
+
+Rata-rata memakai sampel valid pada interval resource_monitor.interval_seconds
+(default konfigurasi utama: 5 detik). Sampel proses yang diulang untuk beberapa
+GPU dihitung sekali per waktu sampel. Kedua angka merupakan statistik sampel;
+lonjakan di antara sampel bisa terlewat. Rumus training tetap sama.
+
+Data berasal dari training pada summary.json atau CSV resource training.
+Ekspor ulang dapat memakai sampel proses lama yang masih tersedia, tanpa training
+ulang. CSV gabungan dengan format 18 kolom otomatis mendapat dua kolom baru;
+baris dan angka lama dipertahankan. Paket laporan historis tetap tersimpan.
+
+Jika driver melaporkan VRAM per proses sebagai N/A, kedua kolom tetap kosong,
+bukan nol dan bukan diganti VRAM perangkat atau allocator PyTorch. Data proses
+yang dahulu tidak direkam tidak dapat dihitung dari Peak VRAM seluruh GPU.
+Periksa process_vram_status pada CSV resource dan memory.process_vram_source
+di detail_laporan.json untuk sumber angka.
 Mesh recovery tetap berstatus success_mesh_recovered, dan GT mesh baru tidak
 dihitung oleh proses pengumpulan ini. Evaluasi train tidak diberi label test.
 

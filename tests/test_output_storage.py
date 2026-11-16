@@ -10,8 +10,7 @@ from unittest.mock import patch
 import contextlib
 
 import yaml
-from research_pipeline.config import DEFAULTS, REPO, load_config
-from research_pipeline.results import experiment_id
+from research_pipeline.config import DEFAULTS, REPO, load_config, resolve_path
 
 spec = importlib.util.spec_from_file_location('storage_probe_script', REPO / 'scripts/check_output_storage.py')
 storage = importlib.util.module_from_spec(spec)
@@ -67,26 +66,24 @@ class OutputStorageTests(unittest.TestCase):
     def test_missing_windows_mount_is_rejected_before_output_creation(self):
         with patch.object(storage.os.path, 'ismount', return_value=False):
             with self.assertRaisesRegex(ValueError, 'belum terpasang'):
-                storage.require_mounted_drive('/mnt/d/RaDeGS_results/output')
+                storage.require_mounted_drive('/mnt/x/storage_probe/output')
         with patch.object(storage.os.path, 'ismount', return_value=True):
-            storage.require_mounted_drive('/mnt/d/RaDeGS_results/output')
+            storage.require_mounted_drive('/mnt/x/storage_probe/output')
 
-    def test_drive_d_presets_change_only_output_and_result_locations(self):
-        for original, moved in (
-            ('togog_bali.yaml', 'togog_bali_drive_d.yaml'),
-            ('togog_bali_scaffold_init.yaml', 'togog_bali_scaffold_init_drive_d.yaml'),
-        ):
-            with self.subTest(config=moved):
-                before = load_config(REPO / 'configs' / original)
-                after = load_config(REPO / 'configs' / moved)
-                self.assertTrue(after['output']['root'].startswith('/mnt/d/RaDeGS_results/output/'))
-                self.assertTrue(after['results']['csv'].startswith('/mnt/d/RaDeGS_results/research_results/'))
-                self.assertEqual(before['dataset'], after['dataset'])
-                for scene in ('hanoman', 'anggada', 'dewi_saraswati'):
-                    self.assertEqual(experiment_id(scene, before), experiment_id(scene, after))
-                after['output'] = before['output']
-                after['results'] = before['results']
-                self.assertEqual(after, before)
+    def test_shipped_presets_store_models_and_reports_inside_repository(self):
+        for path in sorted((REPO / 'configs').glob('*.yaml')):
+            with self.subTest(config=path.name):
+                config = load_config(path)
+                for section, key, folder in (
+                    ('output', 'root', 'output'),
+                    ('results', 'csv', 'research_results'),
+                ):
+                    value = config[section][key]
+                    self.assertFalse(Path(value).is_absolute())
+                    self.assertTrue(
+                        resolve_path(value).is_relative_to(REPO / folder),
+                        f'{path.name}: {section}.{key} must stay inside {folder}/',
+                    )
 
 
 if __name__ == '__main__':

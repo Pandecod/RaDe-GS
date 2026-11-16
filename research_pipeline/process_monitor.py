@@ -59,9 +59,10 @@ class ProcessMonitor:
             root = psutil.Process(pid)
             rss = 0
             for process in [root, *root.children(recursive=True)]:
+                # GPU attribution does not require permission to read process RSS.
+                pids.add(process.pid)
                 try:
                     rss += process.memory_info().rss
-                    pids.add(process.pid)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             row["ram_mb"] = rss / 1024**2
@@ -109,6 +110,7 @@ class ProcessMonitor:
         for name, samples in (("ram", self.ram), ("vram", self.vram)):
             result[f"peak_{name}_mb"] = max(samples) if samples else None
             result[f"average_{name}_mb"] = sum(samples) / len(samples) if samples else None
+        result["vram_sample_count"] = len(self.vram)
         # Device values are global and aggregate all reported devices, not process
         # utilization. Detailed CSV retains each device UUID for comparison.
         result["device_global"] = {
